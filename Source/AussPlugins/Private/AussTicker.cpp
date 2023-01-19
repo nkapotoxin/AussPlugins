@@ -27,13 +27,13 @@ AAussTicker::AAussTicker()
 		GConfig->GetString(TEXT("Auss"), TEXT("RemoteServerNames"), remoteServerNames, GGameIni);
 
 		// Split remote server names
-		remoteServerNames.ParseIntoArray(RemoteServerNames, TEXT(";"), ture);
+		remoteServerNames.ParseIntoArray(RemoteServerNames, TEXT(";"), true);
 		GConfig->GetString(TEXT("Auss"), TEXT("PawnMovementType"), PawnMovementType, GGameIni);
 		GConfig->GetInt(TEXT("Auss"), TEXT("WaitTicks"), waitTicks, GGameIni);
 	}
 
 	// Display ServerName and Remote Server Names
-	UE_LOG(LogAussPlugins, Warning, TEXT("RemoteServerNames:%s"), *ServerName);
+	UE_LOG(LogAussPlugins, Warning, TEXT("ServerNames:%s"), *ServerName);
 	for (FString elem : RemoteServerNames)
 	{
 		UE_LOG(LogAussPlugins, Warning, TEXT("RemoteServerNames:%s"), *elem);
@@ -41,7 +41,7 @@ AAussTicker::AAussTicker()
 
 	UE_LOG(LogAussPlugins, Warning, TEXT("InitLocalPawn with servername:%s"), *ServerName);
 	AUssStore::InitPawnData(ServerName);
-	initClean = ture;
+	initClean = true;
 	//PrimaryActorTick.TickInterval = 1.0f;
 #else
 #endif
@@ -356,8 +356,8 @@ void AAussTicker::UpdateLocalPawn()
 		FVector tmp = (*pawn)->GetActorLocation();
 
 		Location.X = (*tmpPawnData)->position.X;
-		Location.X = (*tmpPawnData)->position.Y;
-		Location.X = (*tmpPawnData)->position.Z;
+		Location.Y = (*tmpPawnData)->position.Y;
+		Location.Z = (*tmpPawnData)->position.Z;
 
 		FRotator Rotator = (*pawn)->GetActorRotation();
 		Rotator.Pitch = (*tmpPawnData)->rotation.Pitch;
@@ -393,11 +393,11 @@ void AAussTicker::UpdateLocalPawn()
 
 void AAussTicker::UpdateRemotePawn()
 {
-	RemotePawnIds.RemoveAll([](FString val) { return true; });
+	RemotePawnIds.RemoveAll([](FString Val) { return true; });
 	for (FString elem : RemoteServerNames)
 	{
 		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns with servername:%s"), *elem);
-		TMap<FString, UAussPawnData*> remotePawnsDatas = AussStore::GetRemotePawnData(elem);
+		TMap<FString, UAussPawnData*> remotePawnDatas = AussStore::GetRemotePawnData(elem);
 		for (TPair<FSTring, UAussPawnData*> tmpElem : remotePawnDatas)
 		{
 			FString tmpRemotePawnId = tmpElem.Key;
@@ -409,7 +409,7 @@ void AAussTicker::UpdateRemotePawn()
 
 	for (FString elem : RemotePawnIds)
 	{
-		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns reoteIds:%s"), *elem);
+		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns remoteIds:%s"), *elem);
 	}
 }
 

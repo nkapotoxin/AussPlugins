@@ -19,6 +19,6 @@ void FAussPluginsModule::ShutdownModule()
 #endif		
 }
 
-#undel LOCTEXT_NAMESPACE
+#undef LOCTEXT_NAMESPACE
 
 IMPLEMENT_MODUEL(FAussPluginsModule, AussPlugins)

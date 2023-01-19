@@ -23,7 +23,7 @@ TMap<FString, UAussPawnData*> AussStore::GetRemotePawnData(const FString& server
 	RedisClient->sync_commit();
 
 	TMap<FString, UAussPawnData*> remotePawnData;
-	cpp_redis::replay newTmp == remotePawnEntityIds.get();
+	cpp_redis::reply newTmp == remotePawnEntityIds.get();
 	if (newTmp.is_null())
 	{
 		return remotePawnData;
@@ -49,8 +49,8 @@ TMap<FString, UAussPawnData*> AussStore::GetRemotePawnData(const FString& server
 		auto pz = RedisClient->get(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem + "---PZ")));
 
 		auto lx = RedisClient->get(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem + "---LX")));
-		auto lx = RedisClient->get(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem + "---LY")));
-		auto lx = RedisClient->get(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem + "---LZ")));
+		auto ly = RedisClient->get(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem + "---LY")));
+		auto lz = RedisClient->get(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem + "---LZ")));
 
 		RedisClient->sync_commit();
 
@@ -59,7 +59,7 @@ TMap<FString, UAussPawnData*> AussStore::GetRemotePawnData(const FString& server
 		FString ppx = px.get().as_string().c_str();
 		FString ppy = py.get().as_string().c_str();
 		FString ppz = pz.get().as_string().c_str();
-		FString plx = lz.get().as_string().c_str();
+		FString plx = lx.get().as_string().c_str();
 		FString ply = ly.get().as_string().c_str();
 		FString plz = lz.get().as_string().c_str();
 
@@ -78,18 +78,18 @@ void AussStore::UpdatePawnData(const FString& serverName, const TArray<UAussPawn
 	FString localPawnIds = "";
 	for (UAussPawnData* elem : pawnDatas)
 	{
-		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityId + "---PX")),
+		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityID + "---PX")),
 			TCHAR_TO_UTF8(*FString::SanitizeFloat(elem->position.X)));
-		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityId + "---PY")),
+		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityID + "---PY")),
 			TCHAR_TO_UTF8(*FString::SanitizeFloat(elem->position.Y)));
-		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityId + "---PZ")),
+		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityID + "---PZ")),
 			TCHAR_TO_UTF8(*FString::SanitizeFloat(elem->position.Z)));
 
-		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityId + "---LX")),
+		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityID + "---LX")),
 			TCHAR_TO_UTF8(*FString::SanitizeFloat(elem->rotation.Pitch)));
-		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityId + "---LY")),
+		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityID + "---LY")),
 			TCHAR_TO_UTF8(*FString::SanitizeFloat(elem->rotation.Yaw)));
-		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityId + "---LZ")),
+		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---LocalPawn---" + elem->entityID + "---LZ")),
 			TCHAR_TO_UTF8(*FString::SanitizeFloat(elem->rotation.Roll)));
 
 		if (localPawnIds != "")
@@ -110,7 +110,7 @@ void AussStore::InitPawnData(const FString& serverName)
 {
 	FString RedisPortString;
 	GConfig->GetString(TEXT("Auss"), TEXT("RedisIp"), RedisIp, GGameIni);
-	GConfig->GetString(TEXT("Auss"), TEXT("RedisPw"), RedisIp, GGameIni);
+	GConfig->GetString(TEXT("Auss"), TEXT("RedisPw"), RedisPw, GGameIni);
 	GConfig->GetString(TEXT("Auss"), TEXT("RedisPort"), RedisPortString, GGameIni);
 
 	RedisPort = FCString::Atoi(*RedisPortString);
@@ -128,7 +128,7 @@ void AussStore::InitPawnData(const FString& serverName)
 	for (cpp_redis::reply tmp : tmpArray)
 	{
 		FString key = tmp.as_string().c_str();
-		tmpList.push_bask(TCHAR_TO_UTF8(*key));
+		tmpList.push_back(TCHAR_TO_UTF8(*key));
 	}
 
 	RedisClient->del(tmpList);

@@ -43,7 +43,7 @@ class AUSSPLUGINS_API AussEvent
 {
 public:
 	AussEvent();
-	~AussEvent();
+	virtual ~AussEvent();
 	static bool registerEvent(const FString& eventName, const FString& funcName, TFunction<void(const UAussEventData*)> func, void* objPtr);
 	static void fire(const FString& eventName, UAussEventData* pEventData);
 	static void registerClass(const FString& pawnName, UClass* classPtr);
@@ -61,13 +61,13 @@ protected:
 	struct FiredEvent
 	{
 		EventObj evt;
-		FString evetnName;
+		FString eventName;
 		UAussEventData* args;
 	};
 
 	static TMap<FString, TArray<EventObj>> events_;
-	static Tarray<FiredEvent*> firedEvents_;
-	static Tmap<FString, UClass*> classes_;
+	static TArray<FiredEvent*> firedEvents_;
+	static TMap<FString, UClass*> classes_;
 	static bool isPause_;
 	static TArray<UAussPawnData*> remotePawnData_;
 };

@@ -9,7 +9,7 @@
 UCLASS()
 class AUSSPLUGINS_API AAussTicker : public AActor, public FTickableGameObject
 {
-	GENERATD_BODY()
+	GENERATED_BODY()
 
 public:
 	AAussTicker();
@@ -40,11 +40,13 @@ public:
 	TArray<FString> RemotePawnIds;
 	TArray<FString> LocalPawnIds;
 	TMap<FString, FString> LocalPawnIdMap;
+	TMap<FString, FString> RemotePawnIdMap;
 	TMap<FString, APawn*> AllLocalPawns;
+	TMap<FString, APawn*> AllLocalPawnController;
 	TMap<FString, UAussPawnData*> RemotePawns;
 	TArray<FString> NeedToCreateRemotePawns;
-	TArray<FString> NeedToDestoryRemotePawns;
-	TArray<FString> NEedToUpdateRemotePawns;
+	TArray<FString> NeedToDestroyRemotePawns;
+	TArray<FString> NeedToUpdateRemotePawns;
 	bool initClean;
 	int waitTicks;
 	bool canTick;

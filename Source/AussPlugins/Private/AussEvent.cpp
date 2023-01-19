@@ -2,7 +2,7 @@
 #include "AussStore.h"
 
 TMap<FString, TArray<AussEvent::EventObj>> AussEvent::events_;
-TArray<AussEvent::FiredEvent*> AussEvent::firedEvent_;
+TArray<AussEvent::FiredEvent*> AussEvent::firedEvents_;
 TMap<FString, UClass*> AussEvent::classes_;
 TArray<UAussPawnData*> AussEvent::remotePawnData_;
 bool AussEvent::isPause_ = false;
@@ -27,7 +27,7 @@ bool AussEvent::registerEvent(const FString& eventName, const FString& funcName,
 	}
 	else
 	{
-		eo_array = &(*eo_array_find)；
+		eo_array = &(*eo_array_find);
 	}
 
 	EventObj eo;
@@ -57,7 +57,7 @@ void AussEvent::fire(const FString& eventName, UAussEventData* pEventData)
 		else
 		{
 			FiredEvent* event = new FiredEvent;
-			event->evt = items;
+			event->evt = item;
 			event->eventName = eventName;
 			event->args = pEventData;
 			firedEvents_.Emplace(event);
