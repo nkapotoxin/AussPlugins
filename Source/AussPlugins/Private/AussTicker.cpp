@@ -90,7 +90,7 @@ void AAussTicker::Tick(float DeltaTime)
 	int32 cost2 = end2 - start2;
 	int32 cost3 = end2 - start;
 
-	UE_LOG(LogAussPlugins, Log, TEXT("UpdateRemote %f %d UpdateLocal %d Toal %d"), DeltaTime, cost1, cost2, cost3);
+	UE_LOG(LogAussPlugins, Log, TEXT("UpdateRemote %f %d UpdateLocal %d Total %d"), DeltaTime, cost1, cost2, cost3);
 #else
 #endif
 }
@@ -163,7 +163,7 @@ AActor* AAussTicker::SpawnActor(UAussPawnData* pawnData)
 APawn* AAussTicker::GetPlayerPawn()
 {
 	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-	unit32 Index = 0;
+	uint32 Index = 0;
 	if (UWorld* World = GEngine->GetWorldFromContextObject(GetWorld(), EGetWorldErrorMode::LogAndReturnNull))
 	{
 		for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
@@ -248,7 +248,7 @@ void AAussTicker::UpdateLocalPawn()
 	for (FString elem : RemotePawnIds)
 	{
 		FString* value = RemotePawnIdMap.Find(elem);
-		if (value = nullptr)
+		if (value == nullptr)
 		{
 			UE_LOG(LogAussPlugins, Warning，TEXT("Need to create:%s"), *elem);
 			NeedToCreateRemotePawns.Add(elem);
@@ -352,7 +352,7 @@ void AAussTicker::UpdateLocalPawn()
 			continue;
 		}
 
-		FVector Location == (*pawn)->GetActorLocation();
+		FVector Location = (*pawn)->GetActorLocation();
 		FVector tmp = (*pawn)->GetActorLocation();
 
 		Location.X = (*tmpPawnData)->position.X;
@@ -367,7 +367,7 @@ void AAussTicker::UpdateLocalPawn()
 		UE_LOG(LogAussPlugins, Log, TEXT("NeedToUpdateRemotePawns localpawn:%s, position:%s"), **localPawnId, *Location.ToString());
 
 		// Do update
-		// PawnMovementTyupe defines different implementations
+		// PawnMovementType defines different implementations
 		if (PawnMovementType == "1")
 		{
 			// emulation sync
@@ -398,7 +398,7 @@ void AAussTicker::UpdateRemotePawn()
 	{
 		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns with servername:%s"), *elem);
 		TMap<FString, UAussPawnData*> remotePawnDatas = AussStore::GetRemotePawnData(elem);
-		for (TPair<FSTring, UAussPawnData*> tmpElem : remotePawnDatas)
+		for (TPair<FString, UAussPawnData*> tmpElem : remotePawnDatas)
 		{
 			FString tmpRemotePawnId = tmpElem.Key;
 			UAussPawnData* tmpRemotePawnData = tmpElem.Value;

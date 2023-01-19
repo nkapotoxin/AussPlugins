@@ -23,7 +23,7 @@ TMap<FString, UAussPawnData*> AussStore::GetRemotePawnData(const FString& server
 	RedisClient->sync_commit();
 
 	TMap<FString, UAussPawnData*> remotePawnData;
-	cpp_redis::reply newTmp == remotePawnEntityIds.get();
+	cpp_redis::reply newTmp = remotePawnEntityIds.get();
 	if (newTmp.is_null())
 	{
 		return remotePawnData;
