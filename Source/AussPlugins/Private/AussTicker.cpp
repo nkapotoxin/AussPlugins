@@ -250,7 +250,7 @@ void AAussTicker::UpdateLocalPawn()
 		FString* value = RemotePawnIdMap.Find(elem);
 		if (value == nullptr)
 		{
-			UE_LOG(LogAussPlugins, Warning，TEXT("Need to create:%s"), *elem);
+			UE_LOG(LogAussPlugins, Warning, TEXT("Need to create:%s"), *elem);
 			NeedToCreateRemotePawns.Add(elem);
 		}
 	}
@@ -273,7 +273,7 @@ void AAussTicker::UpdateLocalPawn()
 		APawn* tmpPawn = elem.Value;
 		
 		FString* value = LocalPawnIdMap.Find(tmpEntityId);
-		if (value = nullptr)
+		if (value == nullptr)
 		{
 			LocalPawnIds.Add(tmpEntityId);
 			UAussPawnData* tmp = NewObject<UAussPawnData>();
