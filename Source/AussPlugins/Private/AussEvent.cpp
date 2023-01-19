@@ -78,7 +78,7 @@ UClass* AussEvent::getRegisteredClass(const FString& pawnName)
 		return NULL;
 	}
 
-	return **classPtr;
+	return *classPtr;
 }
 
 TArray<UAussPawnData*> AussEvent::getRemotePawnData()
