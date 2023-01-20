@@ -40,7 +40,7 @@ AAussTicker::AAussTicker()
 	}
 
 	UE_LOG(LogAussPlugins, Warning, TEXT("InitLocalPawn with servername:%s"), *ServerName);
-	AUssStore::InitPawnData(ServerName);
+	AussStore::InitPawnData(ServerName);
 	initClean = true;
 	//PrimaryActorTick.TickInterval = 1.0f;
 #else
@@ -70,7 +70,7 @@ void AAussTicker::Tick(float DeltaTime)
 			return;
 		}
 
-		UE_LOG(LogAussPlugins, Log, TEXT("AussTIcker tick wait to tick"));
+		UE_LOG(LogAussPlugins, Log, TEXT("AussTicker tick wait to tick"));
 		return;
 	}
 
