@@ -1,5 +1,6 @@
 #include "AussPlugins.h"
 #include "Log.h"
+#include "AussStore.h"
 
 #define LOCTEXT_NAMESPACE "FAussPluginsModule"
 
@@ -7,7 +8,9 @@ void FAussPluginsModule::StartupModule()
 {
 #if WITH_AUSS
 	UE_LOG(LogAussPlugins, Log, TEXT("FAussPluginsModule startup"));
+	AussStore::JsonTest();
 #else
+	AussStore::JsonTest();
 #endif
 }
 

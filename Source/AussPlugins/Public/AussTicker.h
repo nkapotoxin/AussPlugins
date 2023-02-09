@@ -43,7 +43,7 @@ public:
 	TMap<FString, FString> RemotePawnIdMap;
 	TMap<FString, APawn*> AllLocalPawns;
 	TMap<FString, APawn*> AllLocalPawnController;
-	TMap<FString, UAussPawnData*> RemotePawns;
+	TMap<FString, FAussPaData> RemotePawns;
 	TArray<FString> NeedToCreateRemotePawns;
 	TArray<FString> NeedToDestroyRemotePawns;
 	TArray<FString> NeedToUpdateRemotePawns;

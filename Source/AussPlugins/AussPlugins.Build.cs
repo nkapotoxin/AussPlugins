@@ -31,7 +31,7 @@ public class AussPlugins : ModuleRules
 		bEnableUndefinedIdentifierWarnings = false;
 		bEnableExceptions = true;
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject"});
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "JsonUtilities", "Json"});
 		PrivateDependencyModuleNames.AddRange(new string[]{ "CoreUObject", "Engine", "Slate", "SlateCore"});
 
 		PublicIncludePaths.Add(Path.Combine(ThirdPartyPath, "includes"));

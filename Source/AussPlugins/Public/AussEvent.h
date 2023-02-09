@@ -28,6 +28,31 @@ public:
 };
 
 
+USTRUCT()
+struct AUSSPLUGINS_API FAussPaData
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+		FString entityID;
+
+	UPROPERTY()
+		FVector position;
+
+	UPROPERTY()
+		FRotator rotation;
+};
+
+USTRUCT()
+struct AUSSPLUGINS_API FAussPaArray
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+		TArray<FAussPaData> pawnDatas;
+};
+
+
 UCLASS(Blueprintable, BlueprintType)
 class AUSSPLUGINS_API UAussEventData : public UObject
 {

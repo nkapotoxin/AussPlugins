@@ -39,9 +39,11 @@ AAussTicker::AAussTicker()
 		UE_LOG(LogAussPlugins, Warning, TEXT("RemoteServerNames:%s"), *elem);
 	}
 
-	UE_LOG(LogAussPlugins, Warning, TEXT("InitLocalPawn with servername:%s"), *ServerName);
-	AussStore::InitPawnData(ServerName);
-	initClean = true;
+	AussStore::JsonTest();
+
+	//UE_LOG(LogAussPlugins, Warning, TEXT("InitLocalPawn with servername:%s"), *ServerName);
+	//AussStore::InitPawnData(ServerName);
+	//initClean = true;
 	//PrimaryActorTick.TickInterval = 1.0f;
 #else
 #endif
@@ -60,13 +62,26 @@ void AAussTicker::Tick(float DeltaTime)
 		return;
 	}
 
+	//if (waitTicks-- < -3000)
+	//{
+	//	UE_LOG(LogAussPlugins, Warning, TEXT("AussTicker no need to run:%f"), DeltaTime);
+	//	return;
+	//}
+
+	UClass* classPtr = AUSS_GET_REGISTEREDCLASS("AMyCharacterBase");
+	if (classPtr == NULL)
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("AussTicker plugin not registered"));
+		return;
+	}
+
 	if (!canTick) 
 	{
 		AllLocalPawns = GetPawns();
 		for (TPair<FString, APawn*> elem : AllLocalPawns)
 		{
 			canTick = true;
-			UE_LOG(LogAussPlugins, Log, TEXT("AussTicker tick can start"));
+			UE_LOG(LogAussPlugins, Warning, TEXT("AussTicker tick can start"));
 			return;
 		}
 
@@ -74,7 +89,8 @@ void AAussTicker::Tick(float DeltaTime)
 		return;
 	}
 
-	// InitLocalPawn();
+	InitLocalPawn();
+	
 	double start = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
 	
 	UpdateRemotePawn();
@@ -90,7 +106,7 @@ void AAussTicker::Tick(float DeltaTime)
 	int32 cost2 = end2 - start2;
 	int32 cost3 = end2 - start;
 
-	UE_LOG(LogAussPlugins, Log, TEXT("UpdateRemote %f %d UpdateLocal %d Total %d"), DeltaTime, cost1, cost2, cost3);
+	UE_LOG(LogAussPlugins, Warning, TEXT("UpdateRemote %f %d UpdateLocal %d Total %d"), DeltaTime, cost1, cost2, cost3);
 #else
 #endif
 }
@@ -266,7 +282,7 @@ void AAussTicker::UpdateLocalPawn()
 
 	LocalPawnIds.RemoveAll([](FString Val) { return true; });
 	NeedToUpdateRemotePawns.RemoveAll([](FString Val) { return true; });
-	TArray<UAussPawnData*> localPawnDatas;
+	FAussPaArray localPawnDatas;
 	for (TPair<FString, APawn*> elem : AllLocalPawns)
 	{
 		FString tmpEntityId = elem.Key;
@@ -276,11 +292,11 @@ void AAussTicker::UpdateLocalPawn()
 		if (value == nullptr)
 		{
 			LocalPawnIds.Add(tmpEntityId);
-			UAussPawnData* tmp = NewObject<UAussPawnData>();
-			tmp->entityID = tmpEntityId;
-			tmp->position = tmpPawn->GetActorLocation();
-			tmp->rotation = tmpPawn->GetActorRotation();
-			localPawnDatas.Add(tmp);
+			FAussPaData tmp;
+			tmp.entityID = tmpEntityId;
+			tmp.position = tmpPawn->GetActorLocation();
+			tmp.rotation = tmpPawn->GetActorRotation();
+			localPawnDatas.pawnDatas.Add(tmp);
 		}
 		else
 		{
@@ -291,11 +307,11 @@ void AAussTicker::UpdateLocalPawn()
 		}
 	}
 
-	AussStore::UpdatePawnData(ServerName, localPawnDatas);
+	AussStore::UpdatePawnDataNew(ServerName, localPawnDatas);
 
 	for (FString elem : NeedToCreateRemotePawns)
 	{
-		UAussPawnData** tmpPawnData = RemotePawns.Find(elem);
+		FAussPaData* tmpPawnData = RemotePawns.Find(elem);
 		if (tmpPawnData == nullptr)
 		{
 			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToCreateRemotePawns with null pawn id:%s"), *elem);
@@ -303,7 +319,7 @@ void AAussTicker::UpdateLocalPawn()
 		}
 
 		UAussPawnData* tmp = NewObject<UAussPawnData>();
-		tmp->position = (*tmpPawnData)->position;
+		tmp->position = tmpPawnData->position;
 		tmp->entityClassName = "AMyCharacterBase";
 		AActor* actor;
 
@@ -331,7 +347,7 @@ void AAussTicker::UpdateLocalPawn()
 
 	for (FString elem : NeedToUpdateRemotePawns)
 	{
-		UAussPawnData** tmpPawnData = RemotePawns.Find(elem);
+		FAussPaData* tmpPawnData = RemotePawns.Find(elem);
 		if (tmpPawnData == nullptr)
 		{
 			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns with null pawn id:%s"), *elem);
@@ -355,14 +371,14 @@ void AAussTicker::UpdateLocalPawn()
 		FVector Location = (*pawn)->GetActorLocation();
 		FVector tmp = (*pawn)->GetActorLocation();
 
-		Location.X = (*tmpPawnData)->position.X;
-		Location.Y = (*tmpPawnData)->position.Y;
-		Location.Z = (*tmpPawnData)->position.Z;
+		Location.X = tmpPawnData->position.X;
+		Location.Y = tmpPawnData->position.Y;
+		Location.Z = tmpPawnData->position.Z;
 
 		FRotator Rotator = (*pawn)->GetActorRotation();
-		Rotator.Pitch = (*tmpPawnData)->rotation.Pitch;
-		Rotator.Yaw = (*tmpPawnData)->rotation.Yaw;
-		Rotator.Roll = (*tmpPawnData)->rotation.Roll;
+		Rotator.Pitch = tmpPawnData->rotation.Pitch;
+		Rotator.Yaw = tmpPawnData->rotation.Yaw;
+		Rotator.Roll = tmpPawnData->rotation.Roll;
 
 		UE_LOG(LogAussPlugins, Log, TEXT("NeedToUpdateRemotePawns localpawn:%s, position:%s"), **localPawnId, *Location.ToString());
 
@@ -397,13 +413,12 @@ void AAussTicker::UpdateRemotePawn()
 	for (FString elem : RemoteServerNames)
 	{
 		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns with servername:%s"), *elem);
-		TMap<FString, UAussPawnData*> remotePawnDatas = AussStore::GetRemotePawnData(elem);
-		for (TPair<FString, UAussPawnData*> tmpElem : remotePawnDatas)
+		FAussPaArray remotePawnDatas = AussStore::GetRemotePawnDataNew(elem);
+		for (FAussPaData tmpElem : remotePawnDatas.pawnDatas)
 		{
-			FString tmpRemotePawnId = tmpElem.Key;
-			UAussPawnData* tmpRemotePawnData = tmpElem.Value;
+			FString tmpRemotePawnId = tmpElem.entityID;
 			RemotePawnIds.Add(tmpRemotePawnId);
-			RemotePawns.Add(tmpRemotePawnId, tmpRemotePawnData);
+			RemotePawns.Add(tmpRemotePawnId, tmpElem);
 		}
 	}
 

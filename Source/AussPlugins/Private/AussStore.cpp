@@ -2,6 +2,9 @@
 #include "Log.h"
 #include "../../ThirdParty/includes/cpp_redis/cpp_redis"
 #include <iostream>
+#include "JsonUtilities/Public/JsonObjectConverter.h"
+#include <Policies/CondensedJsonPrintPolicy.h>
+
 
 FString AussStore::RedisIp;
 FString AussStore::RedisPw;
@@ -133,4 +136,98 @@ void AussStore::InitPawnData(const FString& serverName)
 
 	RedisClient->del(tmpList);
 	RedisClient->sync_commit();
+}
+
+
+void AussStore::JsonTest()
+{
+	FString json = TEXT("{\"AussPawnDatas\": [{\"entityId\":\"eid001\",\"positionX\" : 0.1,\"positionY\" : 0.2 },{\"entityId\":\"eid002\"}]}");
+
+	FString json2 = TEXT("{\"entityId\":\"eid001\",\"positionX\": 1.1, \"position\": {\"X\": 1.5, \"Y\": 1.2, \"Z\": 1.3 }}");
+
+	FAussPData testStruct;
+
+	FJsonObjectConverter::JsonObjectStringToUStruct(json2, &testStruct, 0, 0);
+
+	UE_LOG(LogAussPlugins, Log, TEXT("JsonTest entityId :%s"), *testStruct.entityId);
+	UE_LOG(LogAussPlugins, Log, TEXT("JsonTest positionX :%f"), testStruct.positionX);
+	UE_LOG(LogAussPlugins, Log, TEXT("JsonTest position_X :%f"), testStruct.position.X);
+
+	FAussPArray testArray;
+
+	if (FJsonObjectConverter::JsonObjectStringToUStruct(json, &testArray, 0, 0))
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("JsonTest num :%d"), testArray.AussPawnDatas.Num());
+	}
+
+	FAussPArray newTestArray;
+	FAussPData pData;
+	pData.entityId = "1";
+	pData.positionX = 1.2f;
+	pData.position = FVector(1.1f, 1.2f, 3.8f);
+	newTestArray.AussPawnDatas.Add(pData);
+	FString strToJson;
+	if (FJsonObjectConverter::UStructToJsonObjectString(FAussPArray::StaticStruct(), &newTestArray, strToJson, 0, 0))
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("JsonTest successful :%s"), *strToJson);
+	}
+
+	FAussPaData uData;
+	uData.entityID = "udadtaid001";
+	uData.position = FVector(1.1f, 1.2f, 3.8f);
+	FString strToUdataJson;
+	if (FJsonObjectConverter::UStructToJsonObjectString(uData, strToUdataJson, 0, 0))
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("JsonTest successful :%s"), *strToUdataJson);
+	}
+
+	FAussPaArray pawnDatas;
+	pawnDatas.pawnDatas.Add(uData);
+	FString pawnString = "";
+	if (FJsonObjectConverter::UStructToJsonObjectString(pawnDatas, pawnString, 0, 0))
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("UpdatePawnDataNew successful :%s"), *pawnString);
+	}
+} 
+
+
+void AussStore::UpdatePawnDataNew(const FString& serverName, const FAussPaArray& paArray)
+{
+	FString pawnString = "";
+	if (FJsonObjectConverter::UStructToJsonObjectString(paArray, pawnString, 0, 0))
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("UpdatePawnDataNew successful :%s"), *pawnString);
+	
+		RedisClient->set(TCHAR_TO_UTF8(*(serverName + "---PawnDatas")), TCHAR_TO_UTF8(*pawnString));
+		RedisClient->sync_commit();
+	}
+	else
+	{
+		UE_LOG(LogAussPlugins, Warning, TEXT("UpdatePawnDataNew failed"));
+	}
+}
+
+FAussPaArray AussStore::GetRemotePawnDataNew(const FString& serverName)
+{
+	FAussPaArray paArray;
+	auto pawnDataOri = RedisClient->get(TCHAR_TO_UTF8(*(serverName + "---PawnDatas")));
+	RedisClient->sync_commit();
+
+	cpp_redis::reply newTmp = pawnDataOri.get();
+	if (newTmp.is_null())
+	{
+		UE_LOG(LogAussPlugins, Warning, TEXT("GetRemotePawnDataNew redis get null"));
+		return paArray;
+	}
+
+	FString pawnDataStr = newTmp.as_string().c_str();
+
+	UE_LOG(LogAussPlugins, Log, TEXT("GetRemotePawnDataNew get for server%s, %s"), *serverName, *pawnDataStr);
+
+	if (FJsonObjectConverter::JsonObjectStringToUStruct(pawnDataStr, &paArray, 0, 0))
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("GetRemotePawnDataNew convert success, pa num :%d"), paArray.pawnDatas.Num());
+	}
+
+	return paArray;
 }
