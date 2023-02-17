@@ -1,44 +1,36 @@
 #pragma once
 
-#include "CoreMinimal.h"
-#include "Tickable.h"
-#include "AussEvent.h"
-#include "AussTicker.generated.h"
+#include "Core.h"
+#include "HAL/Runnable.h"
 
 
-UCLASS()
-class AUSSPLUGINS_API AAussTicker : public AActor, public FTickableGameObject
+class AUSSPLUGINS_API FSyncThread : public FRunnable
 {
-	GENERATED_BODY()
-
 public:
-	AAussTicker();
-	~AAussTicker();
+	FSyncThread();
+	~FSyncThread();
 
+	// must be implemented func
+	virtual bool Init() override;
+	virtual uint32 Run() override;
+	virtual void Stop() override;
+	virtual void Exit() override;
 
-	void JustPlay();
-	void DoSync();
-	void ShowFps();
-
-	virtual bool IsTickableWhenPaused() const override;
-	virtual bool IsTickableInEditor() const override;
-	virtual void Tick(float DeltaTime) override;
-	virtual bool IsTickable() const override;
-	virtual TStatId GetStatId() const override;
-	virtual UWorld* GetTickableGameObjectWorld() const override;
-
-	UWorld* GetWorld() const override;
+	// magic logic
+	UWorld* GetWorld();
 	AActor* SpawnActor(const FString& pawnName, FVector Location, FRotator Rotation);
 	AActor* SpawnActor(UAussPawnData* pawnData);
-	APawn* GetPlayerPawn();
 	TMap<FString, APawn*> GetPawns();
 	TMap<FString, APawn*> GetPawnsByClassName(const FString& PawnClassName);
 	TMap<FString, UAussPawnData*> GetLocalPawnsData();
-
 	void UpdateLocalPawn();
 	void UpdateRemotePawn();
 	void InitLocalPawn();
 
+	// main logic
+	void DoSync();
+
+public:
 	FString ServerName;
 	FString PawnMovementType;
 	TArray<FString> RemoteServerNames;

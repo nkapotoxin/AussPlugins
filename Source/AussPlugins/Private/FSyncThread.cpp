@@ -1,20 +1,13 @@
-#include "AussTicker.h"
+#include "FSyncThread.h"
 #include "Log.h"
 #include "AussEvent.h"
 #include "AussStore.h"
 #include <Runtime/Engine/Classes/Kismet/GameplayStatics.h>
 
-//#include "Blueprint/AIBlueprintHelperLibrary.h"
-
-#if WITH_EDITOR
-#include "Editor.h"
-#endif
-
-
-AAussTicker::AAussTicker()
+FSyncThread::FSyncThread()
 {
 #if WITH_AUSS
-	UE_LOG(LogAussPlugins, Log, TEXT("AAussTicker init"));
+	UE_LOG(LogAussPlugins, Log, TEXT("FSyncThread init"));
 
 	waitTicks = 0;
 	PawnMovementType = "1";
@@ -33,43 +26,62 @@ AAussTicker::AAussTicker()
 	}
 
 	// Display ServerName and Remote Server Names
-	UE_LOG(LogAussPlugins, Warning, TEXT("ServerNames:%s"), *ServerName);
+	UE_LOG(LogAussPlugins, Warning, TEXT("FSyncThread ServerNames:%s"), *ServerName);
 	for (FString elem : RemoteServerNames)
 	{
-		UE_LOG(LogAussPlugins, Warning, TEXT("RemoteServerNames:%s"), *elem);
+		UE_LOG(LogAussPlugins, Warning, TEXT("FSyncThread RemoteServerNames:%s"), *elem);
+	}
+#else
+#endif
+}
+
+FSyncThread::~FSyncThread()
+{
+}
+
+bool FSyncThread::Init()
+{
+#if WITH_AUSS
+	return true;
+#else
+	return false;
+#endif
+}
+
+uint32 FSyncThread::Run()
+{
+	while (true)
+	{
+		FPlatformProcess::Sleep(0.1);
+
+		try
+		{
+			DoSync();
+		}
+		catch (std::exception& e)
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("FSyncThread run error:%s"), e.what());
+			FPlatformProcess::Sleep(10);
+		}
 	}
 
-	AussStore::JsonTest();
-#else
-#endif
+	return 0;
 }
 
-AAussTicker::~AAussTicker()
+void FSyncThread::Stop()
 {
 }
 
-void AAussTicker::JustPlay()
+void FSyncThread::Exit()
 {
-	FPS = 0;
-	isInited = true;
-
-#if WITH_AUSS
-	FTimerHandle FPSTimerHandle;
-	GetWorld()->GetTimerManager().SetTimer(FPSTimerHandle, this, &AAussTicker::DoSync, 0.1f, true);
-
-	FTimerHandle FPSTimerHandle1;
-	GetWorld()->GetTimerManager().SetTimer(FPSTimerHandle1, this, &AAussTicker::ShowFps, 1.f, true);
-#else
-#endif
 }
 
-void AAussTicker::ShowFps()
+UWorld* FSyncThread::GetWorld()
 {
-	UE_LOG(LogAussPlugins, Warning, TEXT("ShowFps run:%d, ms:%f"), FPS, FApp::GetDeltaTime()*1000);
-	FPS = 0;
+	return GWorld;
 }
 
-void AAussTicker::DoSync()
+void FSyncThread::DoSync()
 {
 	float DeltaTime = FApp::GetDeltaTime();
 	if (waitTicks > 0)
@@ -78,16 +90,10 @@ void AAussTicker::DoSync()
 		return;
 	}
 
-	if (waitTicks-- < -3000)
-	{
-		UE_LOG(LogAussPlugins, Warning, TEXT("AussTicker no need to run:%f"), DeltaTime);
-		return;
-	}
-
 	UClass* classPtr = AUSS_GET_REGISTEREDCLASS("AMyCharacterBase");
 	if (classPtr == NULL)
 	{
-		UE_LOG(LogAussPlugins, Log, TEXT("AussTicker plugin not registered"));
+		UE_LOG(LogAussPlugins, Log, TEXT("FSyncThread plugin not registered"));
 		return;
 	}
 
@@ -97,11 +103,11 @@ void AAussTicker::DoSync()
 		for (TPair<FString, APawn*> elem : AllLocalPawns)
 		{
 			canTick = true;
-			UE_LOG(LogAussPlugins, Warning, TEXT("AussTicker tick can start"));
+			UE_LOG(LogAussPlugins, Warning, TEXT("FSyncThread dosync can start"));
 			return;
 		}
 
-		UE_LOG(LogAussPlugins, Log, TEXT("AussTicker tick wait to tick"));
+		UE_LOG(LogAussPlugins, Log, TEXT("FSyncThread dosync wait to start"));
 		return;
 	}
 
@@ -114,7 +120,7 @@ void AAussTicker::DoSync()
 	double end = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
 	double start2 = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
 
-	// Add magci code here
+	// Add magic code here
 	UpdateLocalPawn();
 
 	double end2 = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
@@ -122,60 +128,10 @@ void AAussTicker::DoSync()
 	int32 cost2 = end2 - start2;
 	int32 cost3 = end2 - start;
 
-	UE_LOG(LogAussPlugins, Warning, TEXT("UpdateRemote %f %d UpdateLocal %d Total %d"), DeltaTime, cost1, cost2, cost3);
+	UE_LOG(LogAussPlugins, Warning, TEXT("FSyncThread DeltaTime:%f GetRemotePawn:%d UpdateLocalPawn:%d DoSyncTotal:%d"), DeltaTime, cost1, cost2, cost3);
 }
 
-void AAussTicker::Tick(float DeltaTime)
-{
-	FPS++;
-
-	if (!isInited)
-	{
-		AAussTicker::JustPlay();
-	}
-}
-
-bool AAussTicker::IsTickable() const
-{
-#if WITH_AUSS
-	return false;
-#else
-	return false;
-#endif			
-}
-
-TStatId AAussTicker::GetStatId() const
-{
-	return TStatId();
-}
-
-bool AAussTicker::IsTickableWhenPaused() const
-{
-	return false;
-}
-
-bool AAussTicker::IsTickableInEditor() const
-{
-	return false;
-}
-
-UWorld* AAussTicker::GetWorld() const
-{
-	UWorld* World = (GetOuter() != nullptr) ? GetOuter()->GetWorld() : GWorld;
-	if (World == nullptr)
-	{
-		World = GWorld;
-	}
-
-	return World;
-}
-
-UWorld* AAussTicker::GetTickableGameObjectWorld() const
-{
-	return GetWorld();
-}
-
-AActor* AAussTicker::SpawnActor(const FString& pawnName, FVector Location, FRotator Rotation)
+AActor* FSyncThread::SpawnActor(const FString& pawnName, FVector Location, FRotator Rotation)
 {
 	UClass* classPtr = AUSS_GET_REGISTEREDCLASS(pawnName);
 	if (classPtr == NULL)
@@ -188,49 +144,13 @@ AActor* AAussTicker::SpawnActor(const FString& pawnName, FVector Location, FRota
 	return GetWorld()->SpawnActor(classPtr, &Location, &Rotation);
 }
 
-AActor* AAussTicker::SpawnActor(UAussPawnData* pawnData)
+AActor* FSyncThread::SpawnActor(UAussPawnData* pawnData)
 {
-	FString pawnName = pawnData->entityClassName;
-	FVector Location = pawnData->position;
-	FRotator Rotation = pawnData->rotation;
-	
-	UE_LOG(LogAussPlugins, Log, TEXT("SpawnActor entityClassName: %s"), *pawnName);
-	UE_LOG(LogAussPlugins, Log, TEXT("SpawnActor entityID: %s"), *pawnData->entityID);
-	UE_LOG(LogAussPlugins, Log, TEXT("SpawnActor remote entityID: %s"), *pawnData->remoteEntityID);
-	return SpawnActor(pawnName, Location, Rotation);
+	return SpawnActor(pawnData->entityClassName, pawnData->position, pawnData->rotation);
 }
 
-APawn* AAussTicker::GetPlayerPawn()
-{
-	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-	uint32 Index = 0;
-	if (UWorld* World = GEngine->GetWorldFromContextObject(GetWorld(), EGetWorldErrorMode::LogAndReturnNull))
-	{
-		for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
-		{
-			APlayerController* PlayerController = Iterator->Get();
-			UE_LOG(LogAussPlugins, Log, TEXT("GetPlayerPawn return:%s"), *PlayerController->GetPawnOrSpectator()->GetActorLocation().ToString());
-			Index++;
-		}
-	}
 
-	UE_LOG(LogAussPlugins, Log, TEXT("GetPlayerPawn player num:%d"), Index);
-	for (FConstPawnIterator Iterator = GetWorld()->GetPawnIterator(); Iterator; ++Iterator)
-	{
-		APawn* Pawn = Iterator->Get();
-
-		// Do log print
-		UE_LOG(LogAussPlugins, Log, TEXT("GetPlayerPawn location:%s"), *Pawn->GetActorLocation().ToString());
-		UE_LOG(LogAussPlugins, Log, TEXT("GetPlayerPawn class:%s"), *Pawn->GetClass()->GetName());
-		UE_LOG(LogAussPlugins, Log, TEXT("GetPlayerPawn full name:%s"), *Pawn->GetFullName());
-		UE_LOG(LogAussPlugins, Log, TEXT("GetPlayerPawn name:%s"), *Pawn->GetName());
-	}
-
-	UE_LOG(LogAussPlugins, Log, TEXT("GetPlayerPawn get num pawns:%d"), GetWorld()->GetNumPawns());
-	return PlayerPawn;
-}
-
-TMap<FString, APawn*> AAussTicker::GetPawns()
+TMap<FString, APawn*> FSyncThread::GetPawns()
 {
 	TMap<FString, APawn*> pawns;
 	if (UWorld* World = GEngine->GetWorldFromContextObject(GetWorld(), EGetWorldErrorMode::LogAndReturnNull))
@@ -239,15 +159,13 @@ TMap<FString, APawn*> AAussTicker::GetPawns()
 		{
 			APawn* Pawn = Iterator->Get();
 			pawns.Add(ServerName + Pawn->GetName(), Pawn);
-
-			UE_LOG(LogAussPlugins, Log, TEXT("GetPawns: id:%s, position:%s"), *(ServerName + Pawn->GetName()), *Pawn->GetActorLocation().ToString());
 		}
 	}
 
 	return pawns;
 }
 
-TMap<FString, APawn*> AAussTicker::GetPawnsByClassName(const FString& PawnClassName)
+TMap<FString, APawn*> FSyncThread::GetPawnsByClassName(const FString& PawnClassName)
 {
 	TMap<FString, APawn*> pawns;
 	for (TPair<FString, APawn*> elem : GetPawns())
@@ -261,7 +179,7 @@ TMap<FString, APawn*> AAussTicker::GetPawnsByClassName(const FString& PawnClassN
 	return pawns;
 }
 
-TMap<FString, UAussPawnData*> AAussTicker::GetLocalPawnsData()
+TMap<FString, UAussPawnData*> FSyncThread::GetLocalPawnsData()
 {
 	TMap<FString, UAussPawnData*> pawnsData;
 	for (TPair<FString, APawn*> elem : GetPawns())
@@ -279,7 +197,7 @@ TMap<FString, UAussPawnData*> AAussTicker::GetLocalPawnsData()
 	return pawnsData;
 }
 
-void AAussTicker::UpdateLocalPawn()
+void FSyncThread::UpdateLocalPawn()
 {
 	// Cache Local Pawn Position
 	AllLocalPawns = GetPawns();
@@ -442,7 +360,8 @@ void AAussTicker::UpdateLocalPawn()
 	// TODO remove logout pawn
 }
 
-void AAussTicker::UpdateRemotePawn()
+
+void FSyncThread::UpdateRemotePawn()
 {
 	RemotePawnIds.RemoveAll([](FString Val) { return true; });
 	for (FString elem : RemoteServerNames)
@@ -456,14 +375,9 @@ void AAussTicker::UpdateRemotePawn()
 			RemotePawns.Add(tmpRemotePawnId, tmpElem);
 		}
 	}
-
-	for (FString elem : RemotePawnIds)
-	{
-		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns remoteIds:%s"), *elem);
-	}
 }
 
-void AAussTicker::InitLocalPawn()
+void FSyncThread::InitLocalPawn()
 {
 	if (initClean)
 	{
