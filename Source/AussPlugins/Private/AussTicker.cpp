@@ -41,10 +41,6 @@ AAussTicker::AAussTicker()
 
 	AussStore::JsonTest();
 
-	//UE_LOG(LogAussPlugins, Warning, TEXT("InitLocalPawn with servername:%s"), *ServerName);
-	//AussStore::InitPawnData(ServerName);
-	//initClean = true;
-	//PrimaryActorTick.TickInterval = 1.0f;
 #else
 #endif
 }
@@ -61,12 +57,6 @@ void AAussTicker::Tick(float DeltaTime)
 		waitTicks--;
 		return;
 	}
-
-	//if (waitTicks-- < -3000)
-	//{
-	//	UE_LOG(LogAussPlugins, Warning, TEXT("AussTicker no need to run:%f"), DeltaTime);
-	//	return;
-	//}
 
 	UClass* classPtr = AUSS_GET_REGISTEREDCLASS("AMyCharacterBase");
 	if (classPtr == NULL)
@@ -332,8 +322,11 @@ void AAussTicker::UpdateLocalPawn()
 				continue;
 			}
 
-			APawn* apawn = Cast<APawn>(actor);
-			apawn->SpawnDefaultController();
+			if (PawnMovementType == "01" || PawnMovementType == "02" || PawnMovementType == "03" || PawnMovementType == "04" || PawnMovementType == "05")
+			{
+				APawn* apawn = Cast<APawn>(actor);
+				apawn->SpawnDefaultController();
+			}
 		}
 		catch (std::exception& e)
 		{
@@ -389,7 +382,7 @@ void AAussTicker::UpdateLocalPawn()
 			// emulation sync
 			(*pawn)->SetActorRotation(Rotator);
 			tmp = Location - tmp;
-			if (tmp.X > 0.0001 || tmp.Y > 0.0001 || tmp.Z > 0.0001)
+			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
 			{
 				(*pawn)->AddMovementInput(tmp, 1);
 			}
@@ -401,6 +394,76 @@ void AAussTicker::UpdateLocalPawn()
 			// just sync position
 			(*pawn)->SetActorLocation(Location, true);
 			(*pawn)->SetActorRotation(Rotator);
+		}
+		else if (PawnMovementType == "3")
+		{
+			float dx = FMath::RandRange(-1.0f, 1.0f);
+			float dy = FMath::RandRange(-1.0f, 1.0f);
+			float dz = FMath::RandRange(-1.0f, 1.0f);
+
+			(*pawn)->AddMovementInput(FVector(dx, dy, dz), 1);
+		}
+		else if (PawnMovementType == "4")
+		{
+			float dx = FMath::RandRange(-1.0f, 1.0f);
+			float dy = FMath::RandRange(-1.0f, 1.0f);
+			float dz = FMath::RandRange(-1.0f, 1.0f);
+
+			(*pawn)->Internal_AddMovementInput(FVector(dx, dy, dz), true);
+		}
+		else if (PawnMovementType == "5")
+		{
+			// random move
+			(*pawn)->SetActorRotation(Rotator);
+			tmp = Location - tmp;
+			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
+			{
+				(*pawn)->Internal_AddMovementInput(tmp, 1);
+			}
+		}
+		else if (PawnMovementType == "01")
+		{
+			// emulation sync
+			(*pawn)->SetActorRotation(Rotator);
+			tmp = Location - tmp;
+			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
+			{
+				(*pawn)->AddMovementInput(tmp, 1);
+			}
+
+			// UAIBlueprintHelperLibrary::SimpleMoveToLocation((*pawn)->GetController(), Location);
+		}
+		else if (PawnMovementType == "02")
+		{
+			// just sync position
+			(*pawn)->SetActorLocation(Location, true);
+			(*pawn)->SetActorRotation(Rotator);
+		}
+		else if (PawnMovementType == "03")
+		{
+			float dx = FMath::RandRange(-1.0f, 1.0f);
+			float dy = FMath::RandRange(-1.0f, 1.0f);
+			float dz = FMath::RandRange(-1.0f, 1.0f);
+
+			(*pawn)->AddMovementInput(FVector(dx, dy, dz), 1);
+		}
+		else if (PawnMovementType == "04")
+		{
+			// random move
+			float dx = FMath::RandRange(-1.0f, 1.0f);
+			float dy = FMath::RandRange(-1.0f, 1.0f);
+			float dz = FMath::RandRange(-1.0f, 1.0f);
+
+			(*pawn)->Internal_AddMovementInput(FVector(dx, dy, dz), true);
+		}
+		else if (PawnMovementType == "05")
+		{
+			(*pawn)->SetActorRotation(Rotator);
+			tmp = Location - tmp;
+			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
+			{
+				(*pawn)->Internal_AddMovementInput(tmp, 1);
+			}
 		}
 	}
 
