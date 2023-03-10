@@ -1,9 +1,3 @@
-// Replace me please, Auss.
-
-/**
-* Copyright here.
-*/
-
 using UnrealBuildTool;
 using System.IO;
 
@@ -30,6 +24,21 @@ public class AussPlugins : ModuleRules
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		bEnableUndefinedIdentifierWarnings = false;
 		bEnableExceptions = true;
+
+		PublicDefinitions.AddRange(
+			new[]
+			{
+				"USE_IMPORT_EXPORT",
+				"AUSS_RUNTIME_EXPORTS"
+			});
+
+		PublicIncludePaths.AddRange(
+			new[]
+			{
+				// ... add public include paths required here ...
+				Path.Combine(ModuleDirectory, "AussSdk/include"),
+				Path.Combine(ModuleDirectory, "AussSdk/source")
+			});
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "JsonUtilities", "Json"});
 		PrivateDependencyModuleNames.AddRange(new string[]{ "CoreUObject", "Engine", "Slate", "SlateCore"});

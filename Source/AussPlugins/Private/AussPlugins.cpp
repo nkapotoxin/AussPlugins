@@ -8,9 +8,7 @@ void FAussPluginsModule::StartupModule()
 {
 #if WITH_AUSS
 	UE_LOG(LogAussPlugins, Log, TEXT("FAussPluginsModule startup"));
-	AussStore::JsonTest();
 #else
-	AussStore::JsonTest();
 #endif
 }
 
