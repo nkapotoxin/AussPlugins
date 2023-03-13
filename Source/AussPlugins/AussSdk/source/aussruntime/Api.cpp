@@ -14,7 +14,7 @@ void Api::InitSDK() noexcept
 	Internal::ServerState::CreateInstance();
 }
 
-std::string Api::Get(const std::string &key) noexcept
+std::string Api::GetValue(const std::string &key) noexcept
 {
 	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
@@ -26,7 +26,7 @@ std::string Api::Get(const std::string &key) noexcept
 	return serverState->Get(key);
 }
 
-void Set(const std::string &key, const std::string &value) noexcept
+void SetValue(const std::string &key, const std::string &value) noexcept
 {
 	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
@@ -38,7 +38,7 @@ void Set(const std::string &key, const std::string &value) noexcept
 	return serverState->Set(key, value);
 }
 
-void SyncSet(const std::string &key, const std::string &value) noexcept
+void SyncSetValue(const std::string &key, const std::string &value) noexcept
 {
 	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
@@ -50,7 +50,7 @@ void SyncSet(const std::string &key, const std::string &value) noexcept
 	return serverState->SyncSet(key, value);
 }
 
-void Del(const std::string &key) noexcept
+void DelKey(const std::string &key) noexcept
 {
 	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
@@ -62,7 +62,7 @@ void Del(const std::string &key) noexcept
 	return serverState->Del(key);
 }
 
-void Del(const std::vector<std::string> &keys) noexcept
+void DelKeys(const std::vector<std::string> &keys) noexcept
 {
 	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
@@ -72,4 +72,16 @@ void Del(const std::vector<std::string> &keys) noexcept
 
 	Internal::ServerState* serverState = static_cast<Internal::ServerState*>(commonState);
 	return serverState->Del(keys);
+}
+
+AUSS_RUNTIME_API std::vector<std::string> GetKeys(const std::string &key) noexcept
+{
+	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
+	if (!commonState)
+	{
+		return;
+	}
+
+	Internal::ServerState* serverState = static_cast<Internal::ServerState*>(commonState);
+	return serverState->Keys(key);
 }

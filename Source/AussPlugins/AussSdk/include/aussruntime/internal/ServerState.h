@@ -33,6 +33,8 @@ namespace Internal
 
 		void Del(const std::vector<std::string> &keys);
 
+		std::vector<std::string> Keys(const std::string &key)
+
 	private:
 
 		std::string m_redis_server_ip;

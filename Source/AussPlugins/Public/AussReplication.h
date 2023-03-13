@@ -5,17 +5,6 @@
 
 namespace AussReplication
 {
-	DECLARE_LOG_CATEGORY_EXTERN(LogAussReplication, Log, All);
-
-	inline DEFINE_LOG_CATEGORY(LogAussReplication)
-	
-	void InitServerData(const FString &serverName);
-
-	void UpdateDataToServer(const FString &serverName, const FCharacterReplicationData &replicationData);
-
-	FCharacterReplicationData* GetRemoteServerData(const FString &serverName);
-}
-
 
 USTRUCT()
 struct FUserPlayerInfo
@@ -54,6 +43,16 @@ struct FUserHumanStyleInfo
 };
 
 USTRUCT()
+struct FPlayerState()
+{
+	GENERATED_USTRUCT_BODY()
+	UPROPERTY()
+	FUserPlayerInfo userPlayerInfo;
+	UPROPERTY()
+	FUserHumanStyleInfo userHumanStyleInfo;
+};
+
+USTRUCT()
 struct AUSSPLUGINS_API FCharacterData
 {
 	GENERATED_BODY()
@@ -62,9 +61,7 @@ struct AUSSPLUGINS_API FCharacterData
 	UPROPERTY()
 	FVector rotation;
 	UPROPERTY()
-	FUserPlayerInfo userPlayerInfo;
-	UPROPERTY()
-	FUserHumanStyleInfo userHumanStyleInfo;
+	FPlayerState playerState;
 };
 
 USTRUCT()
@@ -75,3 +72,15 @@ struct AUSSPLUGINS_API FCharacterReplicationData
 	UPROPERTY()
 	TArray<FCharacterData> characterDatas;
 };
+
+DECLARE_LOG_CATEGORY_EXTERN(LogAussReplication, Log, All);
+
+inline DEFINE_LOG_CATEGORY(LogAussReplication)
+
+void InitServerData(const FString &serverName);
+
+void UpdateDataToServer(const FString &serverName, const FCharacterReplicationData &replicationData);
+
+FCharacterReplicationData* GetRemoteServerData(const FString &serverName);
+
+}

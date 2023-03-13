@@ -79,3 +79,22 @@ void Internal::Del(const std::vector<std::string> &keys)
 	m_redis_client->del(key);
 	m_redis_client->sync_commit();
 }
+
+std::vector<std::string> Internal::Keys(const std::string &key)
+{
+	std::vector<std::string> result;
+	auto value = m_redis_client->keys(TCHAR_TO_UTF8(*key));
+	m_redis_client->sync_commit();
+
+	if (!value.is_null())
+	{
+		std::vector<cpp_redis::reply> tmpKeys = value.get().as_array();
+		for (cpp_redis::reply tmp : tmpKeys)
+		{
+			FString key = tmp.as_string().c_str();
+			result.push_back(TCHAR_TO_UTF8(*key));
+		}
+	}
+
+	return result;
+}
