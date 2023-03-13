@@ -33,6 +33,8 @@ public:
 	void InitLocalPawn();
 	void UpdateRemotePawnCache();
 	void UpdateLocalPawn();
+	FRepCharacterData GetReplicationDataFromPawn(FString entityId, APawn* pawn);
+	void UpdatePawnFromReplicationData(APawn* pawn, FRepCharacterData* pawnData);
 
 private:
 
