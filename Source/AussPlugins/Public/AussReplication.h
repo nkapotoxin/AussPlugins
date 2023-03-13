@@ -53,9 +53,11 @@ struct AUSSPLUGINS_API FRepCharacterData
 {
 	GENERATED_BODY()
 	UPROPERTY()
+	FString entityId;
+	UPROPERTY()
 	FVector position;
 	UPROPERTY()
-	FVector rotation;
+	FRotator rotation;
 	UPROPERTY()
 	FRepUserPlayerState playerState;
 };

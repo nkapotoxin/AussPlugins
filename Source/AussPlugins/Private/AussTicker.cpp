@@ -1,10 +1,12 @@
 #include "AussTicker.h"
-#include "Log.h"
-#include "AussEvent.h"
-#include "AussStore.h"
+#include "GameFramework/PlayerState.h"
+#include "GameFramework/GameState.h"
+#include "GameFramework/GameMode.h"
 #include <Runtime/Engine/Classes/Kismet/GameplayStatics.h>
-
+#include "AussReplication.h"
+#include "Log.h"
 //#include "Blueprint/AIBlueprintHelperLibrary.h"
+//#include "Misc/OutputDeviceNull.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -17,29 +19,27 @@ AAussTicker::AAussTicker()
 	UE_LOG(LogAussPlugins, Log, TEXT("AAussTicker init"));
 
 	waitTicks = 0;
-	PawnMovementType = "1";
+	pawnMovementType = "1";
 	canTick = false;
-	
+
 	if (GConfig)
 	{
-		FString remoteServerNames;
-		GConfig->GetString(TEXT("Auss"), TEXT("ServerName"), ServerName, GGameIni);
-		GConfig->GetString(TEXT("Auss"), TEXT("RemoteServerNames"), remoteServerNames, GGameIni);
+		FString remoteServerNamesStr;
+		GConfig->GetString(TEXT("Auss"), TEXT("ServerName"), serverName, GGameIni);
+		GConfig->GetString(TEXT("Auss"), TEXT("RemoteServerNames"), remoteServerNamesStr, GGameIni);
 
 		// Split remote server names
-		remoteServerNames.ParseIntoArray(RemoteServerNames, TEXT(";"), true);
-		GConfig->GetString(TEXT("Auss"), TEXT("PawnMovementType"), PawnMovementType, GGameIni);
+		remoteServerNamesStr.ParseIntoArray(remoteServerNames, TEXT(";"), true);
+		GConfig->GetString(TEXT("Auss"), TEXT("PawnMovementType"), pawnMovementType, GGameIni);
 		GConfig->GetInt(TEXT("Auss"), TEXT("WaitTicks"), waitTicks, GGameIni);
 	}
 
-	// Display ServerName and Remote Server Names
-	UE_LOG(LogAussPlugins, Warning, TEXT("ServerNames:%s"), *ServerName);
-	for (FString elem : RemoteServerNames)
+	// Display serverNameand Remote Server Names
+	UE_LOG(LogAussPlugins, Warning, TEXT("ServerNames: %s"), *serverName);
+	for (FString elem : remoteServerNames)
 	{
-		UE_LOG(LogAussPlugins, Warning, TEXT("RemoteServerNames:%s"), *elem);
+		UE_LOG(LogAussPlugins, Warning, TEXT("RemoteServerNames: %s"), *elem);
 	}
-
-	AussStore::JsonTest();
 
 #else
 #endif
@@ -49,7 +49,7 @@ AAussTicker::~AAussTicker()
 {
 }
 
-void AAussTicker::Tick(float DeltaTime)
+void AAussTicker::Tick(float deltaTime)
 {
 #if WITH_AUSS
 	if (waitTicks > 0)
@@ -58,17 +58,10 @@ void AAussTicker::Tick(float DeltaTime)
 		return;
 	}
 
-	UClass* classPtr = AUSS_GET_REGISTEREDCLASS("AMyCharacterBase");
-	if (classPtr == NULL)
+	if (!canTick)
 	{
-		UE_LOG(LogAussPlugins, Log, TEXT("AussTicker plugin not registered"));
-		return;
-	}
-
-	if (!canTick) 
-	{
-		AllLocalPawns = GetPawns();
-		for (TPair<FString, APawn*> elem : AllLocalPawns)
+		allLocalPawns = GetPawns();
+		for (TPair<FString, APawn*> elem : allLocalPawns)
 		{
 			canTick = true;
 			UE_LOG(LogAussPlugins, Warning, TEXT("AussTicker tick can start"));
@@ -80,15 +73,14 @@ void AAussTicker::Tick(float DeltaTime)
 	}
 
 	InitLocalPawn();
-	
+
 	double start = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
-	
-	UpdateRemotePawn();
-	
+
+	UpdateRemotePawnCache();
+
 	double end = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
 	double start2 = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
 
-	// Add magci code here
 	UpdateLocalPawn();
 
 	double end2 = FDateTime::Now().GetTimeOfDay().GetTotalMilliseconds();
@@ -96,7 +88,7 @@ void AAussTicker::Tick(float DeltaTime)
 	int32 cost2 = end2 - start2;
 	int32 cost3 = end2 - start;
 
-	UE_LOG(LogAussPlugins, Warning, TEXT("UpdateRemote %f %d UpdateLocal %d Total %d"), DeltaTime, cost1, cost2, cost3);
+	UE_LOG(LogAussPlugins, Warning, TEXT("Auss tick: %f ms, update remote pawn: %d ms, update local pawn: %d ms, tick total: %d ms"), deltaTime, cost1, cost2, cost3);
 #else
 #endif
 }
@@ -141,29 +133,30 @@ UWorld* AAussTicker::GetTickableGameObjectWorld() const
 	return GetWorld();
 }
 
-AActor* AAussTicker::SpawnActor(const FString& pawnName, FVector Location, FRotator Rotation)
+AActor* AAussTicker::SpawnActor(FRepCharacterData* pawnData)
 {
-	UClass* classPtr = AUSS_GET_REGISTEREDCLASS(pawnName);
+	UClass* classPtr = NULL;
+
+	UWorld* const World = GetWorld();
+	const AGameModeBase* GameMode = World ? World->GetAuthGameMode() : NULL;
+	if (GameMode == NULL)
+	{
+		const AGameStateBase* const GameState = World ? World->GetGameState() : NULL;
+		GameMode = GameState ? GameState->GetDefaultGameMode() : NULL;
+	}
+
+	if (GameMode != NULL)
+	{
+		classPtr = GameMode->DefaultPawnClass;
+	}
+
 	if (classPtr == NULL)
 	{
-		UE_LOG(LogAussPlugins, Warning, TEXT("SpawnActor null cause class not found:%s"), *pawnName);
+		UE_LOG(LogAussPlugins, Warning, TEXT("SpawnActor null cause class not found"));
 		return NULL;
 	}
 
-	UE_LOG(LogAussPlugins, Warning, TEXT("SpawnActor find the class:%s"), *pawnName);
-	return GetWorld()->SpawnActor(classPtr, &Location, &Rotation);
-}
-
-AActor* AAussTicker::SpawnActor(UAussPawnData* pawnData)
-{
-	FString pawnName = pawnData->entityClassName;
-	FVector Location = pawnData->position;
-	FRotator Rotation = pawnData->rotation;
-	
-	UE_LOG(LogAussPlugins, Log, TEXT("SpawnActor entityClassName: %s"), *pawnName);
-	UE_LOG(LogAussPlugins, Log, TEXT("SpawnActor entityID: %s"), *pawnData->entityID);
-	UE_LOG(LogAussPlugins, Log, TEXT("SpawnActor remote entityID: %s"), *pawnData->remoteEntityID);
-	return SpawnActor(pawnName, Location, Rotation);
+	return GetWorld()->SpawnActor(classPtr, &pawnData->position, &pawnData->rotation);
 }
 
 APawn* AAussTicker::GetPlayerPawn()
@@ -204,291 +197,27 @@ TMap<FString, APawn*> AAussTicker::GetPawns()
 		for (FConstPawnIterator Iterator = World->GetPawnIterator(); Iterator; ++Iterator)
 		{
 			APawn* Pawn = Iterator->Get();
-			pawns.Add(ServerName + Pawn->GetName(), Pawn);
+			pawns.Add(serverName + Pawn->GetName(), Pawn);
 
-			UE_LOG(LogAussPlugins, Log, TEXT("GetPawns: id:%s, position:%s"), *(ServerName + Pawn->GetName()), *Pawn->GetActorLocation().ToString());
+			UE_LOG(LogAussPlugins, Log, TEXT("GetPawns: id:%s, position:%s"), *(serverName + Pawn->GetName()), *Pawn->GetActorLocation().ToString());
 		}
 	}
 
 	return pawns;
 }
 
-TMap<FString, APawn*> AAussTicker::GetPawnsByClassName(const FString& PawnClassName)
+TMap<FString, APawn*> AAussTicker::GetPawnsByClassName(const FString& pawnClassName)
 {
 	TMap<FString, APawn*> pawns;
 	for (TPair<FString, APawn*> elem : GetPawns())
 	{
-		if (elem.Value->GetClass()->GetName() == PawnClassName)
+		if (elem.Value->GetClass()->GetName() == pawnClassName)
 		{
 			pawns.Add(elem.Key, elem.Value);
 		}
 	}
 
 	return pawns;
-}
-
-TMap<FString, UAussPawnData*> AAussTicker::GetLocalPawnsData()
-{
-	TMap<FString, UAussPawnData*> pawnsData;
-	for (TPair<FString, APawn*> elem : GetPawns())
-	{
-		UAussPawnData* tmpData = NewObject<UAussPawnData>();
-		tmpData->entityClassName = elem.Value->GetClass()->GetName();
-		tmpData->entityID = elem.Value->GetName();
-		tmpData->rotation = elem.Value->GetActorRotation();
-		tmpData->position = elem.Value->GetActorLocation();
-		tmpData->scale = elem.Value->GetActorScale();
-
-		pawnsData.Add(tmpData->entityID, tmpData);
-	}
-
-	return pawnsData;
-}
-
-void AAussTicker::UpdateLocalPawn()
-{
-	// Cache Local Pawn Position
-	AllLocalPawns = GetPawns();
-
-	NeedToCreateRemotePawns.RemoveAll([](FString Val) {	return true; });
-	for (FString elem : RemotePawnIds)
-	{
-		FString* value = RemotePawnIdMap.Find(elem);
-		if (value == nullptr)
-		{
-			UE_LOG(LogAussPlugins, Warning, TEXT("Need to create:%s"), *elem);
-			NeedToCreateRemotePawns.Add(elem);
-		}
-	}
-
-	for (TPair<FString, FString> elem : RemotePawnIdMap)
-	{
-		FString tmpRemotePawnId = elem.Key;
-		if (RemotePawnIds.Find(tmpRemotePawnId) == INDEX_NONE)
-		{
-			NeedToDestroyRemotePawns.Add(tmpRemotePawnId);
-		}
-	}
-
-	LocalPawnIds.RemoveAll([](FString Val) { return true; });
-	NeedToUpdateRemotePawns.RemoveAll([](FString Val) { return true; });
-	FAussPaArray localPawnDatas;
-	for (TPair<FString, APawn*> elem : AllLocalPawns)
-	{
-		FString tmpEntityId = elem.Key;
-		APawn* tmpPawn = elem.Value;
-		
-		FString* value = LocalPawnIdMap.Find(tmpEntityId);
-		if (value == nullptr)
-		{
-			LocalPawnIds.Add(tmpEntityId);
-			FAussPaData tmp;
-			tmp.entityID = tmpEntityId;
-			tmp.position = tmpPawn->GetActorLocation();
-			tmp.rotation = tmpPawn->GetActorRotation();
-			localPawnDatas.pawnDatas.Add(tmp);
-		}
-		else
-		{
-			if (NeedToDestroyRemotePawns.Find(*value) == INDEX_NONE)
-			{
-				NeedToUpdateRemotePawns.Add(*value);
-			}
-		}
-	}
-
-	AussStore::UpdatePawnDataNew(ServerName, localPawnDatas);
-
-	for (FString elem : NeedToCreateRemotePawns)
-	{
-		FAussPaData* tmpPawnData = RemotePawns.Find(elem);
-		if (tmpPawnData == nullptr)
-		{
-			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToCreateRemotePawns with null pawn id:%s"), *elem);
-			continue;
-		}
-
-		UAussPawnData* tmp = NewObject<UAussPawnData>();
-		tmp->position = tmpPawnData->position;
-		tmp->entityClassName = "AMyCharacterBase";
-		AActor* actor;
-
-		try
-		{
-			actor = SpawnActor(tmp);
-			if (actor == NULL)
-			{
-				UE_LOG(LogAussPlugins, Warning, TEXT("UpdateRemotePawns spawn actor null, try to skip"));
-				continue;
-			}
-
-			if (PawnMovementType == "01" || PawnMovementType == "02" || PawnMovementType == "03" || PawnMovementType == "04" || PawnMovementType == "05")
-			{
-				APawn* apawn = Cast<APawn>(actor);
-				apawn->SpawnDefaultController();
-			}
-		}
-		catch (std::exception& e)
-		{
-			UE_LOG(LogAussPlugins, Warning, TEXT("SpawnActor servername:%s, error:%s"), *ServerName, e.what());
-			continue;
-		}
-
-		LocalPawnIdMap.Add(ServerName + actor->GetName(), elem);
-		RemotePawnIdMap.Add(elem, ServerName + actor->GetName());
-	}
-
-	for (FString elem : NeedToUpdateRemotePawns)
-	{
-		FAussPaData* tmpPawnData = RemotePawns.Find(elem);
-		if (tmpPawnData == nullptr)
-		{
-			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns with null pawn id:%s"), *elem);
-			continue;
-		}
-
-		FString* localPawnId = RemotePawnIdMap.Find(elem);
-		if (localPawnId == nullptr)
-		{
-			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns with null local pawn id:%s"), *elem);
-			continue;
-		}
-
-		APawn** pawn = AllLocalPawns.Find(*localPawnId);
-		if (pawn == NULL)
-		{
-			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns can not find local pawns, local pawn id:%s"), **localPawnId);
-			continue;
-		}
-
-		FVector Location = (*pawn)->GetActorLocation();
-		FVector tmp = (*pawn)->GetActorLocation();
-
-		Location.X = tmpPawnData->position.X;
-		Location.Y = tmpPawnData->position.Y;
-		Location.Z = tmpPawnData->position.Z;
-
-		FRotator Rotator = (*pawn)->GetActorRotation();
-		Rotator.Pitch = tmpPawnData->rotation.Pitch;
-		Rotator.Yaw = tmpPawnData->rotation.Yaw;
-		Rotator.Roll = tmpPawnData->rotation.Roll;
-
-		UE_LOG(LogAussPlugins, Log, TEXT("NeedToUpdateRemotePawns localpawn:%s, position:%s"), **localPawnId, *Location.ToString());
-
-		// Do update
-		// PawnMovementType defines different implementations
-		if (PawnMovementType == "1")
-		{
-			// emulation sync
-			(*pawn)->SetActorRotation(Rotator);
-			tmp = Location - tmp;
-			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
-			{
-				(*pawn)->AddMovementInput(tmp, 1);
-			}
-
-			// UAIBlueprintHelperLibrary::SimpleMoveToLocation((*pawn)->GetController(), Location);
-		}
-		else if (PawnMovementType == "2")
-		{
-			// just sync position
-			(*pawn)->SetActorLocation(Location, true);
-			(*pawn)->SetActorRotation(Rotator);
-		}
-		else if (PawnMovementType == "3")
-		{
-			float dx = FMath::RandRange(-1.0f, 1.0f);
-			float dy = FMath::RandRange(-1.0f, 1.0f);
-			float dz = FMath::RandRange(-1.0f, 1.0f);
-
-			(*pawn)->AddMovementInput(FVector(dx, dy, dz), 1);
-		}
-		else if (PawnMovementType == "4")
-		{
-			float dx = FMath::RandRange(-1.0f, 1.0f);
-			float dy = FMath::RandRange(-1.0f, 1.0f);
-			float dz = FMath::RandRange(-1.0f, 1.0f);
-
-			(*pawn)->Internal_AddMovementInput(FVector(dx, dy, dz), true);
-		}
-		else if (PawnMovementType == "5")
-		{
-			// random move
-			(*pawn)->SetActorRotation(Rotator);
-			tmp = Location - tmp;
-			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
-			{
-				(*pawn)->Internal_AddMovementInput(tmp, 1);
-			}
-		}
-		else if (PawnMovementType == "01")
-		{
-			// emulation sync
-			(*pawn)->SetActorRotation(Rotator);
-			tmp = Location - tmp;
-			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
-			{
-				(*pawn)->AddMovementInput(tmp, 1);
-			}
-
-			// UAIBlueprintHelperLibrary::SimpleMoveToLocation((*pawn)->GetController(), Location);
-		}
-		else if (PawnMovementType == "02")
-		{
-			// just sync position
-			(*pawn)->SetActorLocation(Location, true);
-			(*pawn)->SetActorRotation(Rotator);
-		}
-		else if (PawnMovementType == "03")
-		{
-			float dx = FMath::RandRange(-1.0f, 1.0f);
-			float dy = FMath::RandRange(-1.0f, 1.0f);
-			float dz = FMath::RandRange(-1.0f, 1.0f);
-
-			(*pawn)->AddMovementInput(FVector(dx, dy, dz), 1);
-		}
-		else if (PawnMovementType == "04")
-		{
-			// random move
-			float dx = FMath::RandRange(-1.0f, 1.0f);
-			float dy = FMath::RandRange(-1.0f, 1.0f);
-			float dz = FMath::RandRange(-1.0f, 1.0f);
-
-			(*pawn)->Internal_AddMovementInput(FVector(dx, dy, dz), true);
-		}
-		else if (PawnMovementType == "05")
-		{
-			(*pawn)->SetActorRotation(Rotator);
-			tmp = Location - tmp;
-			if (abs(tmp.X) > 0.1 || abs(tmp.Y) > 0.1 || abs(tmp.Z) > 0.1)
-			{
-				(*pawn)->Internal_AddMovementInput(tmp, 1);
-			}
-		}
-	}
-
-	// TODO remove logout pawn
-}
-
-void AAussTicker::UpdateRemotePawn()
-{
-	RemotePawnIds.RemoveAll([](FString Val) { return true; });
-	for (FString elem : RemoteServerNames)
-	{
-		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns with servername:%s"), *elem);
-		FAussPaArray remotePawnDatas = AussStore::GetRemotePawnDataNew(elem);
-		for (FAussPaData tmpElem : remotePawnDatas.pawnDatas)
-		{
-			FString tmpRemotePawnId = tmpElem.entityID;
-			RemotePawnIds.Add(tmpRemotePawnId);
-			RemotePawns.Add(tmpRemotePawnId, tmpElem);
-		}
-	}
-
-	for (FString elem : RemotePawnIds)
-	{
-		UE_LOG(LogAussPlugins, Log, TEXT("Update RemotePawns remoteIds:%s"), *elem);
-	}
 }
 
 void AAussTicker::InitLocalPawn()
@@ -498,7 +227,343 @@ void AAussTicker::InitLocalPawn()
 		return;
 	}
 
-	UE_LOG(LogAussPlugins, Log, TEXT("InitLocalPawn with servername:%s"), *ServerName);
-	AussStore::InitPawnData(ServerName);
+	AussReplication::InitServerData(serverName);
+
+	UE_LOG(LogAussPlugins, Warning, TEXT("InitLocalPawn with servername:%s"), *serverName);
 	initClean = true;
+}
+
+void AAussTicker::UpdateRemotePawnCache()
+{
+	remotePawnIds.RemoveAll([](FString Val) { return true; });
+	for (FString elem : remoteServerNames)
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("Update remote pawns with servername: %s"), *elem);
+		FRepCharacterReplicationData characterReplicationData = AussReplication::GetRemoteServerData(elem);
+
+		for (FRepCharacterData data : characterReplicationData.characterDatas)
+		{
+			remotePawnIds.Add(data.entityId);
+			remotePawns.Add(data.entityId, data);
+		}
+	}
+
+	for (FString elem : remotePawnIds)
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("Get remote pawns finish, remote pawn id: %s"), *elem);
+	}
+}
+
+void AAussTicker::UpdateLocalPawn()
+{
+	// Cache local pawn data
+	allLocalPawns = GetPawns();
+
+	needToCreateRemotePawns.RemoveAll([](FString Val) {	return true; });
+	for (FString elem : remotePawnIds)
+	{
+		FString* value = remotePawnIdMap.Find(elem);
+		if (value == nullptr)
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("Need to spawn:%s"), *elem);
+			needToCreateRemotePawns.Add(elem);
+		}
+	}
+
+	for (TPair<FString, FString> elem : remotePawnIdMap)
+	{
+		FString tmpRemotePawnId = elem.Key;
+		if (remotePawnIds.Find(tmpRemotePawnId) == INDEX_NONE)
+		{
+			needToDestroyRemotePawns.Add(tmpRemotePawnId);
+		}
+	}
+
+	localPawnIds.RemoveAll([](FString Val) { return true; });
+	needToUpdateRemotePawns.RemoveAll([](FString Val) { return true; });
+
+	FRepCharacterReplicationData localPawnDatas;
+	for (TPair<FString, APawn*> elem : allLocalPawns)
+	{
+		FString tmpEntityId = elem.Key;
+		APawn* tmpPawn = elem.Value;
+
+		FString* value = localPawnIdMap.Find(tmpEntityId);
+		if (value != nullptr)
+		{
+			if (needToDestroyRemotePawns.Find(*value) == INDEX_NONE)
+			{
+				needToUpdateRemotePawns.Add(*value);
+			}
+		}
+		else
+		{
+			localPawnIds.Add(tmpEntityId);
+
+			FRepCharacterData tmp;
+			tmp.entityId = tmpEntityId;
+			tmp.position = tmpPawn->GetActorLocation();
+			tmp.rotation = tmpPawn->GetActorRotation();
+
+			// Get player name start
+			APlayerState* ps = tmpPawn->GetPlayerState();
+			FString userNameKey = "UserPlayerInfo";
+			if (ps != NULL)
+			{
+				UClass* psc = ps->GetClass();
+				if (FProperty* Property = psc->FindPropertyByName(*userNameKey))
+				{
+					void* playerInfoAddress = Property->ContainerPtrToValuePtr<void>(ps);
+					if (FStructProperty* StructProp = Cast<FStructProperty>(Property))
+					{
+						UScriptStruct* ScriptStruct = StructProp->Struct;
+						for (FProperty* PropertyNew = ScriptStruct->PropertyLink; PropertyNew != NULL; PropertyNew = PropertyNew->PropertyLinkNext)
+						{
+							if (PropertyNew->GetName().Contains(TEXT("nickName")))
+							{
+								FProperty* ChildProp = PropertyNew;
+								if (FStrProperty* ChildStrProp = Cast<FStrProperty>(ChildProp))
+								{
+									FString nickName = ChildStrProp->GetPropertyValue_InContainer(playerInfoAddress);
+									
+									tmp.playerState.userPlayerInfo.nickName = nickName;
+									UE_LOG(LogAussPlugins, Warning, TEXT("PS username cast success: %s"), *nickName);
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			// Get player name end
+
+			localPawnDatas.characterDatas.Add(tmp);
+		}
+	}
+
+	// Update local pawn data to server
+	AussReplication::UpdateDataToServer(serverName, localPawnDatas);
+
+	// Create pawns for remote server
+	for (FString elem : needToCreateRemotePawns)
+	{
+		FRepCharacterData* tmpPawnData = remotePawns.Find(elem);
+		if (tmpPawnData == nullptr)
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToCreateRemotePawns with null pawn, id: %s"), *elem);
+			continue;
+		}
+
+		AActor* actor;
+		try
+		{
+			actor = SpawnActor(tmpPawnData);
+			if (actor == NULL)
+			{
+				UE_LOG(LogAussPlugins, Warning, TEXT("UpdateRemotePawns spawn actor null, try to skip"));
+				continue;
+			}
+
+			APawn* apawn = Cast<APawn>(actor);
+			if (pawnMovementType == "01" || pawnMovementType == "02" || pawnMovementType == "03" || pawnMovementType == "04" || pawnMovementType == "05")
+			{
+				apawn->SpawnDefaultController();
+				//apawn->GetController()->InitPlayerState();
+			}
+
+			// Change PlayerInfo in PlayerState Start
+			APlayerState* ps = apawn->GetPlayerState();
+			FString userNameKey = "UserPlayerInfo";
+			if (ps != NULL)
+			{
+				UClass* psc = ps->GetClass();
+				if (FProperty* Property = psc->FindPropertyByName(*userNameKey))
+				{
+					void* playerInfoAddress = Property->ContainerPtrToValuePtr<void>(ps);
+					if (FStructProperty* StructProp = Cast<FStructProperty>(Property))
+					{
+						UScriptStruct* ScriptStruct = StructProp->Struct;
+						for (FProperty* PropertyNew = ScriptStruct->PropertyLink; PropertyNew != NULL; PropertyNew = PropertyNew->PropertyLinkNext)
+						{
+							if (PropertyNew->GetName().Contains(TEXT("nickName")))
+							{
+								FProperty* ChildProp = PropertyNew;
+								if (FStrProperty* ChildStrProp = Cast<FStrProperty>(ChildProp))
+								{
+									FString userName = ChildStrProp->GetPropertyValue_InContainer(playerInfoAddress);
+									UE_LOG(LogAussPlugins, Warning, TEXT("SetName PlayerState Print nickName: %s"), *userName);
+								}
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				UE_LOG(LogAussPlugins, Warning, TEXT("SetName PlayerState is null %s"), *elem);
+
+				// Create Player State Start
+				APlayerState* playerState = NULL;
+				UWorld* const World = GetWorld();
+				const AGameModeBase* GameMode = World ? World->GetAuthGameMode() : NULL;
+
+				// If the GameMode is null, this might be a network client that's trying to
+				// record a replay. Try to use the default game mode in this case
+				if (GameMode == NULL)
+				{
+					const AGameStateBase* const GameState = World ? World->GetGameState() : NULL;
+					GameMode = GameState ? GameState->GetDefaultGameMode() : NULL;
+				}
+
+				if (GameMode != NULL)
+				{
+					TSubclassOf<APlayerState> playerStateClassToSpawn = GameMode->PlayerStateClass;
+					if (playerStateClassToSpawn.Get() == nullptr)
+					{
+						UE_LOG(LogAussPlugins, Warning, TEXT("The PlayerStateClass of game mode %s is null, falling back to APlayerState."), *GameMode->GetName());
+						playerStateClassToSpawn = APlayerState::StaticClass();
+					}
+
+					playerState = World->SpawnActor<APlayerState>(playerStateClassToSpawn);
+				}
+				// Create Player State End
+
+				APlayerState* aps = playerState;
+				if (aps != NULL)
+				{
+					apawn->SetPlayerState(aps);
+				}
+
+				// Update user name
+				if (aps != NULL)
+				{
+					UClass* psc = aps->GetClass();
+					if (FProperty* Property = psc->FindPropertyByName(*userNameKey))
+					{
+						void* playerInfoAddress = Property->ContainerPtrToValuePtr<void>(aps);
+						if (FStructProperty* StructProp = Cast<FStructProperty>(Property))
+						{
+							UScriptStruct* ScriptStruct = StructProp->Struct;
+							for (FProperty* PropertyNew = ScriptStruct->PropertyLink; PropertyNew != NULL; PropertyNew = PropertyNew->PropertyLinkNext)
+							{
+								if (PropertyNew->GetName().Contains(TEXT("nickName")))
+								{
+									FProperty* ChildProp = PropertyNew;
+									if (FStrProperty* ChildStrProp = Cast<FStrProperty>(ChildProp))
+									{
+										ChildStrProp->SetPropertyValue_InContainer(playerInfoAddress, tmpPawnData->playerState.userPlayerInfo.nickName);
+									}
+								}
+
+								if (PropertyNew->GetName().Contains(TEXT("Gender")))
+								{
+									FProperty* ChildProp = PropertyNew;
+									if (FIntProperty* ChildStrProp = Cast<FIntProperty>(ChildProp))
+									{
+										int32 gender = ChildStrProp->GetPropertyValue_InContainer(playerInfoAddress);
+
+										ChildStrProp->SetPropertyValue_InContainer(playerInfoAddress, 1);
+									}
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					UE_LOG(LogAussPlugins, Warning, TEXT("SetName PlayerState failed, player state is null, pawnId: %s"), *elem);
+				}
+			}
+			// Change PlayerInfo in PlayerState End
+		}
+		catch (std::exception& e)
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("SpawnActor servername: %s, error: %s"), *serverName, e.what());
+			continue;
+		}
+
+		localPawnIdMap.Add(serverName + actor->GetName(), elem);
+		remotePawnIdMap.Add(elem, serverName + actor->GetName());
+	}
+
+	// Update pawns for remote server
+	for (FString elem : needToUpdateRemotePawns)
+	{
+		FRepCharacterData* tmpPawnData = remotePawns.Find(elem);
+		if (tmpPawnData == nullptr)
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns with null pawn id: %s"), *elem);
+			continue;
+		}
+
+		FString* localPawnId = remotePawnIdMap.Find(elem);
+		if (localPawnId == nullptr)
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns with null local pawn id: %s"), *elem);
+			continue;
+		}
+
+		APawn** pawn = allLocalPawns.Find(*localPawnId);
+		if (pawn == NULL)
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns can not find local pawns, local pawn id: %s"), **localPawnId);
+			continue;
+		}
+
+		FVector oldLocation = (*pawn)->GetActorLocation();
+		FVector newLocation = tmpPawnData->position;
+		FRotator newRotator = tmpPawnData->rotation;
+
+		UE_LOG(LogAussPlugins, Log, TEXT("NeedToUpdateRemotePawns localpawn: %s, position: %s"), **localPawnId, *newLocation.ToString());
+
+		// PawnMovementType defines different implementations
+		if (pawnMovementType == "1" || pawnMovementType == "01")
+		{
+			// emulation sync
+			(*pawn)->SetActorRotation(newRotator);
+			FVector diff = newLocation - oldLocation;
+
+			if (abs(diff.X) > 0.1 || abs(diff.Y) > 0.1 || abs(diff.Z) > 0.1)
+			{
+				(*pawn)->AddMovementInput(diff, 1);
+			}
+			// UAIBlueprintHelperLibrary::SimpleMoveToLocation((*pawn)->GetController(), Location);
+		}
+		else if (pawnMovementType == "2" || pawnMovementType == "02")
+		{
+			// just sync position
+			(*pawn)->SetActorLocation(newLocation, true);
+			(*pawn)->SetActorRotation(newRotator);
+		}
+		else if (pawnMovementType == "3" || pawnMovementType == "03")
+		{
+			// random move
+			float dx = FMath::RandRange(-1.0f, 1.0f);
+			float dy = FMath::RandRange(-1.0f, 1.0f);
+			float dz = FMath::RandRange(-1.0f, 1.0f);
+
+			(*pawn)->AddMovementInput(FVector(dx, dy, dz), 1);
+		}
+		else if (pawnMovementType == "4" || pawnMovementType == "04")
+		{
+			// random move
+			float dx = FMath::RandRange(-1.0f, 1.0f);
+			float dy = FMath::RandRange(-1.0f, 1.0f);
+			float dz = FMath::RandRange(-1.0f, 1.0f);
+
+			(*pawn)->Internal_AddMovementInput(FVector(dx, dy, dz), true);
+		}
+		else if (pawnMovementType == "5" || pawnMovementType == "05")
+		{
+			(*pawn)->SetActorRotation(newRotator);
+			FVector diff = newLocation - oldLocation;
+
+			if (abs(diff.X) > 0.1 || abs(diff.Y) > 0.1 || abs(diff.Z) > 0.1)
+			{
+				(*pawn)->Internal_AddMovementInput(diff, 1);
+			}
+		}
+	}
+
+	// TODO(nkaptx): Delete pawns for remote server
 }
