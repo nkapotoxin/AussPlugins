@@ -3,6 +3,8 @@
  * The public Auss Runtime SDK API
  */
 #include <aussruntime/Exports.h>
+#include <iostream>
+#include <vector>
 
 namespace Auss
 {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <aussruntime/internal/CommonState.h>
+#include <iostream>
 #include "../../ThirdParty/includes/cpp_redis/cpp_redis" // TODO(nkaptx): need optimise
 
 namespace Auss
@@ -33,7 +34,7 @@ namespace Internal
 
 		void Del(const std::vector<std::string> &keys);
 
-		std::vector<std::string> Keys(const std::string &key)
+		std::vector<std::string> Keys(const std::string& key);
 
 	private:
 

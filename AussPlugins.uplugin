@@ -18,7 +18,10 @@
 		{
 			"Name": "AussPlugins",
 			"Type": "Runtime",
-			"LoadingPhase": "PreDefault"
+			"LoadingPhase": "PreDefault",
+			"WhiteListPlatforms": [
+				"Win64"
+			]
 		}
 	]
 }

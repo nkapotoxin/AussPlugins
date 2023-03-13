@@ -220,7 +220,7 @@ FAussPaArray AussStore::GetRemotePawnDataNew(const FString& serverName)
 		return paArray;
 	}
 
-	FString pawnDataStr = newTmp.as_string().c_str();
+	FString pawnDataStr = UTF8_TO_TCHAR(newTmp.as_string().c_str());
 
 	UE_LOG(LogAussPlugins, Log, TEXT("GetRemotePawnDataNew get for server%s, %s"), *serverName, *pawnDataStr);
 

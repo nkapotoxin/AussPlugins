@@ -1,4 +1,5 @@
 #include <aussruntime/Api.h>
+#include <aussruntime/internal/ServerState.h>
 
 using namespace Auss::Runtime;
 
@@ -26,62 +27,63 @@ std::string Api::GetValue(const std::string &key) noexcept
 	return serverState->Get(key);
 }
 
-void SetValue(const std::string &key, const std::string &value) noexcept
+void Api::SetValue(const std::string &key, const std::string &value) noexcept
 {
-	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
+	Auss::Runtime::Internal::CommonState* commonState = Auss::Runtime::Internal::CommonState::GetInstance(Auss::Runtime::Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
 	{
 		return;
 	}
 
-	Internal::ServerState* serverState = static_cast<Internal::ServerState*>(commonState);
+	Auss::Runtime::Internal::ServerState* serverState = static_cast<Auss::Runtime::Internal::ServerState*>(commonState);
 	return serverState->Set(key, value);
 }
 
-void SyncSetValue(const std::string &key, const std::string &value) noexcept
+void Api::SyncSetValue(const std::string &key, const std::string &value) noexcept
 {
-	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
+	Auss::Runtime::Internal::CommonState* commonState = Auss::Runtime::Internal::CommonState::GetInstance(Auss::Runtime::Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
 	{
 		return;
 	}
 
-	Internal::ServerState* serverState = static_cast<Internal::ServerState*>(commonState);
+	Auss::Runtime::Internal::ServerState* serverState = static_cast<Auss::Runtime::Internal::ServerState*>(commonState);
 	return serverState->SyncSet(key, value);
 }
 
-void DelKey(const std::string &key) noexcept
+void Api::DelKey(const std::string &key) noexcept
 {
-	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
+	Auss::Runtime::Internal::CommonState* commonState = Auss::Runtime::Internal::CommonState::GetInstance(Auss::Runtime::Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
 	{
 		return;
 	}
 
-	Internal::ServerState* serverState = static_cast<Internal::ServerState*>(commonState);
+	Auss::Runtime::Internal::ServerState* serverState = static_cast<Auss::Runtime::Internal::ServerState*>(commonState);
 	return serverState->Del(key);
 }
 
-void DelKeys(const std::vector<std::string> &keys) noexcept
+void Api::DelKeys(const std::vector<std::string> &keys) noexcept
 {
-	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
+	Auss::Runtime::Internal::CommonState* commonState = Auss::Runtime::Internal::CommonState::GetInstance(Auss::Runtime::Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
 	{
 		return;
 	}
 
-	Internal::ServerState* serverState = static_cast<Internal::ServerState*>(commonState);
+	Auss::Runtime::Internal::ServerState* serverState = static_cast<Auss::Runtime::Internal::ServerState*>(commonState);
 	return serverState->Del(keys);
 }
 
-AUSS_RUNTIME_API std::vector<std::string> GetKeys(const std::string &key) noexcept
+std::vector<std::string> Api::GetKeys(const std::string &key) noexcept
 {
-	Internal::CommonState* commonState = Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
+	std::vector<std::string> result;
+	Auss::Runtime::Internal::CommonState* commonState = Auss::Runtime::Internal::CommonState::GetInstance(Auss::Runtime::Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE::SERVER);
 	if (!commonState)
 	{
-		return;
+		return result;
 	}
 
-	Internal::ServerState* serverState = static_cast<Internal::ServerState*>(commonState);
+	Auss::Runtime::Internal::ServerState* serverState = static_cast<Auss::Runtime::Internal::ServerState*>(commonState);
 	return serverState->Keys(key);
 }

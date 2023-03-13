@@ -8,9 +8,9 @@ namespace Internal
 {
 	class CommonState;
 
-	enmu class AUSSRUNTIME_INTERNAL_STATE_TYPE
+	enum AUSSRUNTIME_INTERNAL_STATE_TYPE
 	{
-		CLIENT;
+		CLIENT,
 		SERVER
 	};
 

@@ -1,6 +1,6 @@
 #include "AussUtils.h"
 
-using namespace Aws::Runtime;
+using namespace Auss::Runtime;
 
 namespace AussUtils
 {
@@ -11,22 +11,27 @@ namespace AussUtils
 
 	std::string ReadFieldFromAuss(const std::string &key)
 	{
-		return Api::Get(key);
+		return Api::GetValue(key);
+	}
+
+	std::vector<std::string> ReadKeysFromAuss(const std::string& key)
+	{
+		return Api::GetKeys(key);
 	}
 
 	void WriteFieldToAuss(const std::string &key, const std::string &value)
 	{
-		return Api::Set(key, value);
+		return Api::SetValue(key, value);
 	}
 
 	void DeleteFieldFromAuss(const std::string &key)
 	{
-		return Api::Del(key);
+		return Api::DelKey(key);
 	}
 
 	void DeleteFieldsFromAuss(const std::vector<std::string> &keys)
 	{
-		return Api::Del(keys);
+		return Api::DelKeys(keys);
 	}
 
 }

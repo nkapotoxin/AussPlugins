@@ -2,7 +2,7 @@
 
 using namespace Auss::Runtime;
 
-Internal::ServerState::ServerState()
+Auss::Runtime::Internal::ServerState::ServerState()
 	: m_redis_server_ip("127.0.0.1")
 	, m_redis_server_pw("")
 	, m_redis_server_port(6379)
@@ -11,13 +11,13 @@ Internal::ServerState::ServerState()
 	// TODO(nkaptx): read from local config file
 	
 	static cpp_redis::client client;
-	client->connect(std::string(TCHAR_TO_UTF8(*m_redis_server_ip)), m_redis_server_port);
-	client->auth(std::string(TCHAR_TO_UTF8(*m_redis_server_pw)));
+	client.connect(m_redis_server_ip, m_redis_server_port);
+	client.auth(m_redis_server_pw);
 
 	m_redis_client = &client;
 }
 
-Internal::ServerState::~ServerState()
+Auss::Runtime::Internal::ServerState::~ServerState()
 {
 	Internal::CommonState::SetInstance(nullptr);
 	if (m_redis_client)
@@ -27,12 +27,12 @@ Internal::ServerState::~ServerState()
 	}
 }
 
-Internal::ServerState*
-Internal::ServerState::CreateInstance()
+Auss::Runtime::Internal::ServerState*
+Auss::Runtime::Internal::ServerState::CreateInstance()
 {
 	if (CommonState::GetInstance() != nullptr)
 	{
-		return CommonState::GetInstance();
+		return (Internal::ServerState*)CommonState::GetInstance();
 	}
 
 	ServerState* newState = new ServerState;
@@ -40,9 +40,9 @@ Internal::ServerState::CreateInstance()
 	return newState;
 }
 
-std::string Internal::Get(const std::string &key)
+std::string Auss::Runtime::Internal::ServerState::Get(const std::string &key)
 {
-	auto value = m_redis_client->get(TCHAR_TO_UTF8(*key));
+	auto value = m_redis_client->get(key);
 	m_redis_client->sync_commit();
 
 	cpp_redis::reply reply = value.get();
@@ -55,45 +55,42 @@ std::string Internal::Get(const std::string &key)
 	return reply.as_string().c_str();
 }
 
-void Internal::Set(const std::string &key, const std::string &value)
+void Auss::Runtime::Internal::ServerState::Set(const std::string &key, const std::string &value)
 {
-	m_redis_client->set(TCHAR_TO_UTF8(*key), TCHAR_TO_UTF8(*value));
+	m_redis_client->set(key, value);
 	m_redis_client->commit();
 }
 
-void Internal::SyncSet(const std::string &key, const std::string &value)
+void Auss::Runtime::Internal::ServerState::SyncSet(const std::string &key, const std::string &value)
 {
-	m_redis_client->set(TCHAR_TO_UTF8(*key), TCHAR_TO_UTF8(*value));
+	m_redis_client->set(key, value);
 	m_redis_client->sync_commit();
 }
 
-void Internal::Del(const std::string &key)
+void Auss::Runtime::Internal::ServerState::Del(const std::string &key)
 {
 	std::vector<std::string> keys;
-	keys.push_back(TCHAR_TO_UTF8(*key));
-	Internal::Del(keys);
+	keys.push_back(key);
+	Internal::ServerState::Del(keys);
 }
 
-void Internal::Del(const std::vector<std::string> &keys)
+void Auss::Runtime::Internal::ServerState::Del(const std::vector<std::string> &keys)
 {
-	m_redis_client->del(key);
+	m_redis_client->del(keys);
 	m_redis_client->sync_commit();
 }
 
-std::vector<std::string> Internal::Keys(const std::string &key)
+std::vector<std::string> Auss::Runtime::Internal::ServerState::Keys(const std::string &key)
 {
 	std::vector<std::string> result;
-	auto value = m_redis_client->keys(TCHAR_TO_UTF8(*key));
+	auto value = m_redis_client->keys(key);
 	m_redis_client->sync_commit();
 
-	if (!value.is_null())
+	std::vector<cpp_redis::reply> tmpKeys = value.get().as_array();
+	for (cpp_redis::reply tmp : tmpKeys)
 	{
-		std::vector<cpp_redis::reply> tmpKeys = value.get().as_array();
-		for (cpp_redis::reply tmp : tmpKeys)
-		{
-			FString key = tmp.as_string().c_str();
-			result.push_back(TCHAR_TO_UTF8(*key));
-		}
+		FString key = tmp.as_string().c_str();
+		result.push_back(TCHAR_TO_UTF8(*key));
 	}
 
 	return result;

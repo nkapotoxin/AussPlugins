@@ -2,29 +2,29 @@
 
 using namespace Auss::Runtime;
 
-Internal::CommonState* Internal::CommonState::m_instance;
+Auss::Runtime::Internal::CommonState* Auss::Runtime::Internal::CommonState::m_instance;
 
-Internal::CommonState::CommonState()
+Auss::Runtime::Internal::CommonState::CommonState()
 {
 }
 
-Internal::CommonState::~CommonState()
+Auss::Runtime::Internal::CommonState::~CommonState()
 {
 }
 
-void Internal::SetInstance(Internal::CommonState* instance)
+void Auss::Runtime::Internal::CommonState::SetInstance(Auss::Runtime::Internal::CommonState* instance)
 {
 	m_instance = instance;
 }
 
-Internal::CommonState*
-Internal::CommonState::GetInstance()
+Auss::Runtime::Internal::CommonState*
+Auss::Runtime::Internal::CommonState::GetInstance()
 {
 	return m_instance;
 }
 
-Internal::CommonState*
-Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE stateType)
+Auss::Runtime::Internal::CommonState*
+Auss::Runtime::Internal::CommonState::GetInstance(Auss::Runtime::Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE stateType)
 {
 	if (!m_instance || m_instance->GetStateType() != stateType)
 	{
@@ -34,7 +34,7 @@ Internal::CommonState::GetInstance(Internal::AUSSRUNTIME_INTERNAL_STATE_TYPE sta
 	return m_instance;
 }
 
-void Internal::CommonState::DestroyInstance()
+void Auss::Runtime::Internal::CommonState::DestroyInstance()
 {
 	if (m_instance)
 	{
