@@ -6,7 +6,9 @@
 #include "AussReplication.h"
 #include "Log.h"
 //#include "Blueprint/AIBlueprintHelperLibrary.h"
-//#include "Misc/OutputDeviceNull.h"
+#include "Misc/OutputDeviceNull.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -332,6 +334,15 @@ void AAussTicker::UpdateLocalPawn()
 			{
 				apawn->SpawnDefaultController();
 				//apawn->GetController()->InitPlayerState();
+
+				// Set movement speed
+				// 1 call set movement speed 
+				// FOutputDeviceNull ar;
+				// apawn->CallFunctionByNameWithArguments(TEXT("SetMovementSpeedAll 600"), ar, nullptr, true);
+
+				// 2 set max walk speed
+				// ACharacter* ach = Cast<ACharacter>(actor);
+				// ach->GetCharacterMovement()->MaxWalkSpeed = 600.0f;
 			}
 
 			UpdatePawnFromReplicationData(apawn, tmpPawnData);
@@ -383,7 +394,12 @@ void AAussTicker::UpdateLocalPawn()
 			(*pawn)->SetActorRotation(newRotator);
 			FVector diff = newLocation - oldLocation;
 
-			if (abs(diff.X) > 1 || abs(diff.Y) > 1 || abs(diff.Z) > 1)
+			if (abs(diff.X) > 1000 || abs(diff.Y) > 1000 || abs(diff.Z) > 1000)
+			{
+				// teleport
+				(*pawn)->SetActorLocation(newLocation, false);
+			}
+			else if (abs(diff.X) > 1 || abs(diff.Y) > 1 || abs(diff.Z) > 1)
 			{
 				(*pawn)->AddMovementInput(diff, 5);
 				// UAIBlueprintHelperLibrary::SimpleMoveToLocation((*pawn)->GetController(), Location);
@@ -570,6 +586,10 @@ FRepCharacterData AAussTicker::GetReplicationDataFromPawn(FString entityId, APaw
 		}
 	}
 
+	// Add walk speed
+	ACharacter* ach = Cast<ACharacter>(pawn);
+	result.walkSpeed = ach->GetCharacterMovement()->MaxWalkSpeed;
+
 	return result;
 }
 
@@ -734,4 +754,8 @@ void AAussTicker::UpdatePawnFromReplicationData(APawn* pawn, FRepCharacterData* 
 			}
 		}
 	}
+
+	// update walk speed
+	ACharacter* ach = Cast<ACharacter>(pawn);
+	ach->GetCharacterMovement()->MaxWalkSpeed = pawnData->walkSpeed;
 }

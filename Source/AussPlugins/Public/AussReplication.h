@@ -60,6 +60,8 @@ struct AUSSPLUGINS_API FRepCharacterData
 	FRotator rotation;
 	UPROPERTY()
 	FRepUserPlayerState playerState;
+	UPROPERTY()
+	float walkSpeed;
 };
 
 USTRUCT()

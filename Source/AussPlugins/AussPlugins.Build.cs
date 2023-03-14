@@ -25,6 +25,11 @@ public class AussPlugins : ModuleRules
 		bEnableUndefinedIdentifierWarnings = false;
 		bEnableExceptions = true;
 
+		// Support no source code
+		// PrecompileForTargets = PrecompileTargetsType.None;
+		// bPrecompile = true;
+		// bUsePrecompiled = true;
+
 		PublicDefinitions.AddRange(
 			new[]
 			{
