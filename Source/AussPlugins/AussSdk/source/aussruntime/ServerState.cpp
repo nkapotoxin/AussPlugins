@@ -89,8 +89,7 @@ std::vector<std::string> Auss::Runtime::Internal::ServerState::Keys(const std::s
 	std::vector<cpp_redis::reply> tmpKeys = value.get().as_array();
 	for (cpp_redis::reply tmp : tmpKeys)
 	{
-		FString key = tmp.as_string().c_str();
-		result.push_back(TCHAR_TO_UTF8(*key));
+		result.push_back(tmp.as_string().c_str());
 	}
 
 	return result;

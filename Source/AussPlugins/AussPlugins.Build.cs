@@ -26,8 +26,8 @@ public class AussPlugins : ModuleRules
 		bEnableExceptions = true;
 
 		// Support no source code
-		// PrecompileForTargets = PrecompileTargetsType.None;
-		// bPrecompile = true;
+		PrecompileForTargets = PrecompileTargetsType.None;
+		bPrecompile = true;
 		// bUsePrecompiled = true;
 
 		PublicDefinitions.AddRange(

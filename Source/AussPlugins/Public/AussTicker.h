@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
 #include "Tickable.h"
 #include "AussEvent.h"
 #include "AussReplication.h"

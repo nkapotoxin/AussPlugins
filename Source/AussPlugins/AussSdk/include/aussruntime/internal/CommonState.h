@@ -8,7 +8,7 @@ namespace Internal
 {
 	class CommonState;
 
-	enum AUSSRUNTIME_INTERNAL_STATE_TYPE
+	enum class AUSSRUNTIME_INTERNAL_STATE_TYPE
 	{
 		CLIENT,
 		SERVER

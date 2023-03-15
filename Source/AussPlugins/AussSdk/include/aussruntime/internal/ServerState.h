@@ -2,6 +2,7 @@
 
 #include <aussruntime/internal/CommonState.h>
 #include <iostream>
+#include <vector>
 #include "../../ThirdParty/includes/cpp_redis/cpp_redis" // TODO(nkaptx): need optimise
 
 namespace Auss
@@ -42,7 +43,7 @@ namespace Internal
 
 		std::string m_redis_server_pw;
 
-		int32 m_redis_server_port;
+		int m_redis_server_port;
 
 		cpp_redis::client* m_redis_client;
 
