@@ -4,7 +4,6 @@
 
 namespace AussUtils
 {
-
 	void InitSDK();
 
 	std::string ReadFieldFromAuss(const std::string &key);
@@ -16,5 +15,4 @@ namespace AussUtils
 	void DeleteFieldFromAuss(const std::string &key);
 
 	void DeleteFieldsFromAuss(const std::vector<std::string> &keys);
-
 }

@@ -1,10 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
 #include "Tickable.h"
 #include "AussEvent.h"
 #include "AussReplication.h"
+#include "GameFramework/PlayerState.h"
+#include "GameFramework/GameState.h"
+#include "GameFramework/GameMode.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "AussTicker.generated.h"
 
 
@@ -25,11 +29,13 @@ public:
 	virtual TStatId GetStatId() const override;
 	virtual UWorld* GetTickableGameObjectWorld() const override;
 	UWorld* GetWorld() const override;
+	const AGameModeBase* GetGameMode() const;
+	TSubclassOf<APlayerState> GetPlayerStateClass() const;
+	TSubclassOf<APawn> GetDefaultPawnClass() const;
 
 	AActor* SpawnActor(FRepCharacterData* pawnData);
 	TMap<FString, APawn*> GetPawns();
 	TMap<FString, APawn*> GetPawnsByClassName(const FString& pawnClassName);
-	APawn* GetPlayerPawn();
 
 	void InitLocalPawn();
 	void UpdateRemotePawnCache();
@@ -38,7 +44,6 @@ public:
 	void UpdatePawnFromReplicationData(APawn* pawn, FRepCharacterData* pawnData);
 
 private:
-
 	bool initClean;
 	int waitTicks;
 	bool canTick;

@@ -39,7 +39,11 @@ FRepCharacterReplicationData AussReplication::GetRemoteServerData(const FString 
 	{
 		if (FJsonObjectConverter::JsonObjectStringToUStruct(UTF8_TO_TCHAR(value.c_str()), &result, 0, 0))
 		{
-			UE_LOG(LogAussPlugins, Log, TEXT("GetRemoteServerData convert successful, CharacterReplication number: %d"), result.characterDatas.Num());
+			UE_LOG(LogAussPlugins, Log, TEXT("GetRemoteServerData servername with fileds num: %d"), result.characterDatas.Num());
+		}
+		else
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("GetRemoteServerData failed, servername: %s"), *serverName);
 		}
 	}
 	return result;
