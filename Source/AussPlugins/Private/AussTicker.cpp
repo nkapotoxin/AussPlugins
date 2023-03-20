@@ -161,7 +161,7 @@ UWorld* AAussTicker::GetTickableGameObjectWorld() const
 	return GetWorld();
 }
 
-AActor* AAussTicker::SpawnActor(FRepCharacterData* pawnData)
+AActor* AAussTicker::SpawnActor(FPawnEntity* pawnData)
 {
 	UClass* classPtr = GetDefaultPawnClass();
 	if (classPtr == nullptr)
@@ -217,9 +217,9 @@ void AAussTicker::UpdateRemotePawnCache()
 	for (FString elem : remoteServerNames)
 	{
 		UE_LOG(LogAussPlugins, Log, TEXT("Update remote pawns with servername: %s"), *elem);
-		FRepCharacterReplicationData characterReplicationData = AussReplication::GetRemoteServerData(elem);
+		FPawnEntityCollection characterReplicationData = AussReplication::GetRemoteServerPawnEntity(elem);
 
-		for (FRepCharacterData data : characterReplicationData.characterDatas)
+		for (FPawnEntity data : characterReplicationData.pawnEntities)
 		{
 			remotePawnIds.Add(data.entityId);
 			remotePawns.Add(data.entityId, data);
@@ -255,7 +255,7 @@ void AAussTicker::UpdateLocalPawn()
 	localPawnIds.RemoveAll([](FString Val) { return true; });
 	needToUpdateRemotePawns.RemoveAll([](FString Val) { return true; });
 
-	FRepCharacterReplicationData localPawnDatas;
+	FPawnEntityCollection localPawnDatas;
 	for (TPair<FString, APawn*> elem : allLocalPawns)
 	{
 		FString tmpEntityId = elem.Key;
@@ -272,18 +272,18 @@ void AAussTicker::UpdateLocalPawn()
 		else
 		{
 			localPawnIds.Add(tmpEntityId);
-			FRepCharacterData tmp = GetReplicationDataFromPawn(tmpEntityId, tmpPawn);
-			localPawnDatas.characterDatas.Add(tmp);
+			FPawnEntity tmp = GetReplicationDataFromPawn(tmpEntityId, tmpPawn);
+			localPawnDatas.pawnEntities.Add(tmp);
 		}
 	}
 
 	// Update local pawn data to server
-	AussReplication::UpdateDataToServer(serverName, localPawnDatas);
+	AussReplication::UpdatePawnEntityToServer(serverName, localPawnDatas);
 
 	// Create pawns for remote server
 	for (FString elem : needToCreateRemotePawns)
 	{
-		FRepCharacterData* tmpPawnData = remotePawns.Find(elem);
+		FPawnEntity* tmpPawnData = remotePawns.Find(elem);
 		if (tmpPawnData == nullptr)
 		{
 			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToCreateRemotePawns with null pawn, id: %s"), *elem);
@@ -300,7 +300,7 @@ void AAussTicker::UpdateLocalPawn()
 		if (APawn* apawn = Cast<APawn>(actor))
 		{
 			// pawn movement type 01/02/03/04/05 with controller and player state
-			if (pawnMovementType == "01" || pawnMovementType == "02" || pawnMovementType == "03" || 
+			if (pawnMovementType == "01" || pawnMovementType == "02" || pawnMovementType == "03" ||
 				pawnMovementType == "04" || pawnMovementType == "05")
 			{
 				apawn->SpawnDefaultController();
@@ -317,7 +317,7 @@ void AAussTicker::UpdateLocalPawn()
 	// Update pawns for remote server
 	for (FString elem : needToUpdateRemotePawns)
 	{
-		FRepCharacterData* tmpPawnData = remotePawns.Find(elem);
+		FPawnEntity* tmpPawnData = remotePawns.Find(elem);
 		if (tmpPawnData == nullptr)
 		{
 			UE_LOG(LogAussPlugins, Warning, TEXT("NeedToUpdateRemotePawns with null pawn id: %s"), *elem);
@@ -403,9 +403,9 @@ void AAussTicker::UpdateLocalPawn()
 }
 
 
-FRepCharacterData AAussTicker::GetReplicationDataFromPawn(FString entityId, APawn* pawn)
+FPawnEntity AAussTicker::GetReplicationDataFromPawn(FString entityId, APawn* pawn)
 {
-	FRepCharacterData result;
+	FPawnEntity result;
 
 	// Generate position and rotation info
 	result.entityId = entityId;
@@ -420,284 +420,11 @@ FRepCharacterData AAussTicker::GetReplicationDataFromPawn(FString entityId, APaw
 		return result;
 	}
 
-	// TODO(nkaptx): replace with reflection
-	UClass* psc = ps->GetClass();
-	if (FProperty* property = psc->FindPropertyByName("UserPlayerInfo"))
-	{
-		void* playerInfoAddress = property->ContainerPtrToValuePtr<void>(ps);
-		if (FStructProperty* structProp = CastField<FStructProperty>(property))
-		{
-			UScriptStruct* scriptStruct = structProp->Struct;
-			for (FProperty* scriptProperty = scriptStruct->PropertyLink; scriptProperty != nullptr; scriptProperty = scriptProperty->PropertyLinkNext)
-			{
-				if (scriptProperty->GetName().Contains(TEXT("UserID")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.userId = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("nickName")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.nickName = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("UserName")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.userName = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("realName")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.realName = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("title")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.title = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("company")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.company = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("email")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.email = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("phone")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.phone = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("loginDate")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						result.playerState.userPlayerInfo.loginDate = childStrProp->GetPropertyValue_InContainer(playerInfoAddress);
-					}
-				}
-			}
-		}
-	}
-
-	if (FProperty* property = psc->FindPropertyByName("UserHumanStyleInfo"))
-	{
-		void* humanStyleAddress = property->ContainerPtrToValuePtr<void>(ps);
-		if (FStructProperty* structProp = CastField<FStructProperty>(property))
-		{
-			UScriptStruct* scriptStruct = structProp->Struct;
-			for (FProperty* scriptProperty = scriptStruct->PropertyLink; scriptProperty != nullptr; scriptProperty = scriptProperty->PropertyLinkNext)
-			{
-				if (scriptProperty->GetName().Contains(TEXT("Face")))
-				{
-					if (FIntProperty* childIntProp = CastField<FIntProperty>(scriptProperty))
-					{
-						result.playerState.userHumanStyleInfo.face = childIntProp->GetPropertyValue_InContainer(humanStyleAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("Hair")))
-				{
-					if (FIntProperty* childIntProp = CastField<FIntProperty>(scriptProperty))
-					{
-						result.playerState.userHumanStyleInfo.hair = childIntProp->GetPropertyValue_InContainer(humanStyleAddress);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("Cloth")))
-				{
-					if (FIntProperty* childIntProp = CastField<FIntProperty>(scriptProperty))
-					{
-						result.playerState.userHumanStyleInfo.cloth = childIntProp->GetPropertyValue_InContainer(humanStyleAddress);
-					}
-				}
-			}
-		}
-	}
-
-	// Add walk speed
-	if (ACharacter* ach = Cast<ACharacter>(pawn))
-	{
-		result.walkSpeed = ach->GetCharacterMovement()->MaxWalkSpeed;
-	}
-
+	result.playerState = ps;
 	return result;
 }
 
-void AAussTicker::UpdatePawnFromReplicationData(APawn* pawn, FRepCharacterData* pawnData)
+void AAussTicker::UpdatePawnFromReplicationData(APawn* pawn, FPawnEntity* pawnData)
 {
-	APlayerState* ps = pawn->GetPlayerState();
-	if (ps == NULL)
-	{
-		// Need to spawn player state for remote pawn first time
-		UE_LOG(LogAussPlugins, Warning, TEXT("UpdatePawnFromReplicationData need to spawn player state: %s"), *(pawnData->entityId));
-
-		TSubclassOf<APlayerState> playerStateClassToSpawn = GetPlayerStateClass();
-		if (playerStateClassToSpawn != nullptr)
-		{
-			ps = GetWorld()->SpawnActor<APlayerState>(playerStateClassToSpawn);
-
-			// Set player state first time
-			pawn->SetPlayerState(ps);
-		}
-	}
-
-	if (ps == NULL)
-	{
-		UE_LOG(LogAussPlugins, Warning, TEXT("UpdatePawnFromReplicationData failed, player state cannot be spawned, pawnId: %s"), 
-			*(pawnData->entityId));
-		return;
-	}
-
-	// TODO(nkaptx): replace here to reflection
-	UClass* psc = ps->GetClass();
-
-	if (FProperty* property = psc->FindPropertyByName("UserPlayerInfo"))
-	{
-		void* playerInfoAddress = property->ContainerPtrToValuePtr<void>(ps);
-		if (FStructProperty* structProperty = CastField<FStructProperty>(property))
-		{
-			UScriptStruct* scriptStruct = structProperty->Struct;
-			for (FProperty* scriptProperty = scriptStruct->PropertyLink; scriptProperty != NULL; scriptProperty = scriptProperty->PropertyLinkNext)
-			{
-				if (scriptProperty->GetName().Contains(TEXT("UserID")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.userId);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("nickName")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.nickName);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("UserName")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.userName);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("realName")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.realName);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("title")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.title);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("company")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.company);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("email")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.email);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("phone")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.phone);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("loginDate")))
-				{
-					if (FStrProperty* childStrProp = CastField<FStrProperty>(scriptProperty))
-					{
-						childStrProp->SetPropertyValue_InContainer(playerInfoAddress, pawnData->playerState.userPlayerInfo.loginDate);
-					}
-				}
-			}
-		}
-	}
-
-	if (FProperty* property = psc->FindPropertyByName("UserHumanStyleInfo"))
-	{
-		void* humanStyleAddress = property->ContainerPtrToValuePtr<void>(ps);
-		if (FStructProperty* structProp = CastField<FStructProperty>(property))
-		{
-			UScriptStruct* scriptStruct = structProp->Struct;
-			for (FProperty* scriptProperty = scriptStruct->PropertyLink; scriptProperty != nullptr; scriptProperty = scriptProperty->PropertyLinkNext)
-			{
-				if (scriptProperty->GetName().Contains(TEXT("Face")))
-				{
-					if (FIntProperty* childIntProp = CastField<FIntProperty>(scriptProperty))
-					{
-						childIntProp->SetPropertyValue_InContainer(humanStyleAddress, pawnData->playerState.userHumanStyleInfo.face);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("Hair")))
-				{
-					if (FIntProperty* childIntProp = CastField<FIntProperty>(scriptProperty))
-					{
-						childIntProp->SetPropertyValue_InContainer(humanStyleAddress, pawnData->playerState.userHumanStyleInfo.hair);
-					}
-				}
-
-				if (scriptProperty->GetName().Contains(TEXT("Cloth")))
-				{
-					if (FIntProperty* childIntProp = CastField<FIntProperty>(scriptProperty))
-					{
-						childIntProp->SetPropertyValue_InContainer(humanStyleAddress, pawnData->playerState.userHumanStyleInfo.cloth);
-					}
-				}
-			}
-		}
-	}
-
-	// update walk speed
-	if (ACharacter* ach = Cast<ACharacter>(pawn))
-	{
-		ach->GetCharacterMovement()->MaxWalkSpeed = pawnData->walkSpeed;
-	}
+	pawn->SetPlayerState(pawnData->playerState);
 }

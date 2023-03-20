@@ -33,15 +33,15 @@ public:
 	TSubclassOf<APlayerState> GetPlayerStateClass() const;
 	TSubclassOf<APawn> GetDefaultPawnClass() const;
 
-	AActor* SpawnActor(FRepCharacterData* pawnData);
+	AActor* SpawnActor(FPawnEntity* pawnData);
 	TMap<FString, APawn*> GetPawns();
 	TMap<FString, APawn*> GetPawnsByClassName(const FString& pawnClassName);
 
 	void InitLocalPawn();
 	void UpdateRemotePawnCache();
 	void UpdateLocalPawn();
-	FRepCharacterData GetReplicationDataFromPawn(FString entityId, APawn* pawn);
-	void UpdatePawnFromReplicationData(APawn* pawn, FRepCharacterData* pawnData);
+	FPawnEntity GetReplicationDataFromPawn(FString entityId, APawn* pawn);
+	void UpdatePawnFromReplicationData(APawn* pawn, FPawnEntity* pawnData);
 
 private:
 	bool initClean;
@@ -55,7 +55,8 @@ private:
 	TMap<FString, FString> localPawnIdMap;
 	TMap<FString, FString> remotePawnIdMap;
 	TMap<FString, APawn*> allLocalPawns;
-	TMap<FString, FRepCharacterData> remotePawns;
+	//TMap<FString, FRepCharacterData> remotePawns;
+	TMap<FString, FPawnEntity> remotePawns;
 	TArray<FString> needToCreateRemotePawns;
 	TArray<FString> needToDestroyRemotePawns;
 	TArray<FString> needToUpdateRemotePawns;

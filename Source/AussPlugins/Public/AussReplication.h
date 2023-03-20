@@ -73,6 +73,32 @@ struct AUSSPLUGINS_API FRepCharacterReplicationData
 	TArray<FRepCharacterData> characterDatas;
 };
 
+USTRUCT()
+struct AUSSPLUGINS_API FPawnEntity
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FString entityId;
+
+	UPROPERTY()
+	FVector position;
+
+	UPROPERTY()
+	FRotator rotation;
+
+	UPROPERTY()
+	APlayerState *playerState;
+};
+
+USTRUCT()
+struct AUSSPLUGINS_API FPawnEntityCollection
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<FPawnEntity> pawnEntities;
+};
 
 namespace AussReplication
 {
@@ -82,5 +108,9 @@ void InitServerData(const FString& serverName);
 void UpdateDataToServer(const FString& serverName, const FRepCharacterReplicationData& replicationData);
 
 FRepCharacterReplicationData GetRemoteServerData(const FString& serverName);
+
+void UpdatePawnEntityToServer(const FString& serverName, const FPawnEntityCollection pawnEntities);
+
+FPawnEntityCollection GetRemoteServerPawnEntity(const FString& serverName);
 
 }

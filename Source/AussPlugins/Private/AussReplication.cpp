@@ -48,3 +48,36 @@ FRepCharacterReplicationData AussReplication::GetRemoteServerData(const FString 
 	}
 	return result;
 }
+
+void AussReplication::UpdatePawnEntityToServer(const FString& serverName, const FPawnEntityCollection pawnEntities)
+{
+	FString serverPawnEntitiesStr;
+	if (FJsonObjectConverter::UStructToJsonObjectString(pawnEntities, serverPawnEntitiesStr, 0, 0))
+	{
+		UE_LOG(LogAussPlugins, Log, TEXT("UpdatePawnEntityToServer successful: %s"), *serverPawnEntitiesStr);
+		AussUtils::WriteFieldToAuss(TCHAR_TO_UTF8(*(serverName + "---PawnEntities")), TCHAR_TO_UTF8(*serverPawnEntitiesStr));
+	}
+	else
+	{
+		UE_LOG(LogAussPlugins, Warning, TEXT("UpdatePawnEntityToServer failed: %s"), *serverName);
+	}
+}
+
+FPawnEntityCollection AussReplication::GetRemoteServerPawnEntity(const FString& serverName)
+{
+	FPawnEntityCollection result;
+
+	std::string value = AussUtils::ReadFieldFromAuss(TCHAR_TO_UTF8(*(serverName + "---PawnEntities")));
+	if (value != "")
+	{
+		if (FJsonObjectConverter::JsonObjectStringToUStruct(UTF8_TO_TCHAR(value.c_str()), &result, 0, 0))
+		{
+			UE_LOG(LogAussPlugins, Log, TEXT("GetRemoteServerPawnEntity servername with fileds num: %d"), result.pawnEntities.Num());
+		}
+		else
+		{
+			UE_LOG(LogAussPlugins, Warning, TEXT("GetRemoteServerPawnEntity failed, servername: %s"), *serverName);
+		}
+	}
+	return result;
+}
