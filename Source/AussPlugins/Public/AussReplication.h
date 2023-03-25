@@ -24,6 +24,10 @@ struct AUSSPLUGINS_API FRepUserPlayerInfo
 		FString phone;
 	UPROPERTY()
 		FString loginDate;
+	UPROPERTY()
+		FString playerPhone;
+	UPROPERTY()
+		int32 gender;
 };
 
 USTRUCT()

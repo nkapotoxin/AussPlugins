@@ -10,16 +10,15 @@
 	"DocsURL": "",
 	"MarketplaceURL": "",
 	"SupportURL": "",
-	"EnabledByDefault": false,
+	"EngineVersion": "4.27.0",
 	"CanContainContent": false,
-	"IsBetaVersion": false,
-	"Installed": false,
+	"Installed": true,
 	"Modules": [
 		{
 			"Name": "AussPlugins",
 			"Type": "Runtime",
 			"LoadingPhase": "PreDefault",
-			"WhiteListPlatforms": [
+			"WhitelistPlatforms": [
 				"Win64"
 			]
 		}

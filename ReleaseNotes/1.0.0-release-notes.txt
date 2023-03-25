@@ -1,0 +1,3 @@
+- First Implementation for Auss. 
+- Support Auss::Runtime Api calls from AussUtils.
+- Support local redis with ip 127.0.0.1 in AussSdkLocal.lib for test. 

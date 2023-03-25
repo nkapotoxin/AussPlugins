@@ -1,0 +1,2 @@
+- Add remote redis with ip 10.12.2.211 in AussSdk_10.12.2.211.lib for test. 
+- Add PlayerState with UserPlayerState and WalkSpeed sync.
