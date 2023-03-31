@@ -480,4 +480,10 @@ void AAussTicker::UpdatePawnFromReplicationData(APawn* pawn, FRepCharacterData* 
 	}
 
 	UpdatePawnRepData(pawn, pawnData);
+
+	// update walk speed
+	if (ACharacter* ach = Cast<ACharacter>(pawn))
+	{
+		ach->GetCharacterMovement()->MaxWalkSpeed = pawnData->walkSpeed;
+	}
 }
