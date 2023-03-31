@@ -411,93 +411,19 @@ void AAussTicker::UpdateLocalPawn()
 void AAussTicker::GetPawnRepData(APawn* pawn, FRepCharacterData* rcd)
 {
 	// add magic code here
-	TArray<FRepLayoutCmd> cmds = playerStateLayout->Cmds;
-	TArray<FRepParentCmd> parents = playerStateLayout->Parents;
-	const FConstRepObjectDataBuffer SourceData = pawn->GetPlayerState();
-	for (int32 i = 0; i < cmds.Num(); i++)
-	{
-		FRepLayoutCmd& Cmd = cmds[i];
-		FRepParentCmd& ParentCmd = parents[Cmd.ParentIndex];
+	const FConstRepObjectDataBuffer sourceData = pawn->GetPlayerState();
+	FDataStoreWriter writer( &rcd->dynamicProperties );
 
-		if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
-		{
-			if (ParentCmd.Property->GetName() == "bReplicateMovement" ||
-				ParentCmd.Property->GetName() == "bHidden" ||
-				ParentCmd.Property->GetName() == "bTearOff" ||
-				ParentCmd.Property->GetName() == "bCanBeDamaged" ||
-				ParentCmd.Property->GetName() == "RemoteRole" ||
-				ParentCmd.Property->GetName() == "ReplicatedMovement" ||
-				ParentCmd.Property->GetName() == "AttachmentReplication" ||
-				ParentCmd.Property->GetName() == "Owner" ||
-				ParentCmd.Property->GetName() == "Role" ||
-				ParentCmd.Property->GetName() == "Instigator" ||
-				ParentCmd.Property->GetName() == "bIsSpectator" ||
-				ParentCmd.Property->GetName() == "bOnlySpectator" ||
-				ParentCmd.Property->GetName() == "bIsABot" ||
-				ParentCmd.Property->GetName() == "bIsInactive" ||
-				ParentCmd.Property->GetName() == "bFromPreviousLevel" ||
-				ParentCmd.Property->GetName() == "StartTime" ||
-				ParentCmd.Property->GetName() == "UniqueId")
-			{
-				UE_LOG(LogAussPlugins, Log, TEXT("GetPawnRepData internal property: %s, type: %d"), *Cmd.Property->GetName(), Cmd.Type);
-				continue;
-			}
-
-			FConstRepObjectDataBuffer Data = (SourceData + Cmd);
-			if (Cmd.Type == ERepLayoutCmdType::PropertyString)
-			{
-				FString* tmp = (FString*)Data.Data;
-				rcd->dynamicProperties.Add(i, *tmp);
-			}
-			else if (Cmd.Type == ERepLayoutCmdType::PropertyInt)
-			{
-				int32* tmp = (int32*)Data.Data;
-				rcd->dynamicProperties.Add(i, FString::FromInt(*tmp));
-			}
-			else
-			{
-				UE_LOG(LogAussPlugins, Warning, TEXT("GetPawnRepData not support property: %s, type: %d"), *Cmd.Property->GetName(), Cmd.Type);
-			}
-		}
-	}
+	playerStateLayout->SendProperties(writer, sourceData);
 }
 
 void AAussTicker::UpdatePawnRepData(APawn* pawn, FRepCharacterData* rcd)
 {
-	TArray<FRepLayoutCmd> cmds = playerStateLayout->Cmds;
-	TArray<FRepParentCmd> parents = playerStateLayout->Parents;
+	// add magic code here
+	const FConstRepObjectDataBuffer sourceData = pawn->GetPlayerState();
+	FDataStoreReader reader( &rcd->dynamicProperties );
 
-	const FConstRepObjectDataBuffer SourceData = pawn->GetPlayerState();
-
-	for (TPair<int32, FString> elem : rcd->dynamicProperties)
-	{
-		if (elem.Key < cmds.Num())
-		{
-			FRepLayoutCmd& Cmd = cmds[elem.Key];
-			FRepParentCmd& ParentCmd = parents[Cmd.ParentIndex];
-
-			if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
-			{
-				FConstRepObjectDataBuffer Data = (SourceData + Cmd);
-
-				if (Cmd.Type == ERepLayoutCmdType::PropertyString)
-				{
-					FString* addressnew = (FString*)Data.Data;
-					*addressnew = (FString)elem.Value;
-				}
-				else if (Cmd.Type == ERepLayoutCmdType::PropertyInt)
-				{
-					int32* addressnew = (int32*)Data.Data;
-					*addressnew = FCString::Atoi(*elem.Value);
-				}
-				else
-				{
-					UE_LOG(LogAussPlugins, Warning, TEXT("UpdatePawnRepData not support parent name: %s, name: %s, type: %d, value: %s"),
-						*ParentCmd.Property->GetName(), *Cmd.Property->GetName(), Cmd.Type, *elem.Value);
-				}
-			}
-		}
-	}
+	playerStateLayout->ReceiveProperties(reader, sourceData);
 }
 
 FRepCharacterData AAussTicker::GetReplicationDataFromPawn(FString entityId, APawn* pawn)

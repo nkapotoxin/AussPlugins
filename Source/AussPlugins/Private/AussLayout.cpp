@@ -76,8 +76,6 @@ static int32 InitFromStructProperty(
 	const FStructProperty* const StructProp,
 	const UScriptStruct* const Struct)
 {
-	// Track properties so we can ensure they are sorted by offsets at the end
-	// TODO: Do these actually need to be sorted?
 	TArray<FProperty*> NetProperties;
 
 	for (TFieldIterator<FProperty> It(Struct); It; ++It)
@@ -289,9 +287,6 @@ static uint32 AddPropertyCmd(
 		UE_LOG(LogRep, VeryVerbose, TEXT("AddPropertyCmd: Falling back to default type for property [%s]"), *Cmd.Property->GetFullName());
 	}
 
-	// Cannot write a shared version of a property that depends on per-connection data (the PackageMap).
-	// Includes object pointers and structs with custom NetSerialize functions (unless they opt in)
-	// Also skip writing the RemoteRole since it can be modified per connection in FObjectReplicator
 	if (Cmd.Property->SupportsNetSharedSerialization() && (Cmd.Property->GetFName() != NAME_RemoteRole))
 	{
 		Cmd.Flags |= ERepLayoutCmdFlags::IsSharedSerialization;
@@ -350,7 +345,7 @@ static int32 InitFromProperty_r(
 
 		AddReturnCmd(SharedParams.Cmds);
 
-		SharedParams.Cmds[CmdStart].EndCmd = SharedParams.Cmds.Num();		// Patch in the offset to jump over our array inner elements
+		SharedParams.Cmds[CmdStart].EndCmd = SharedParams.Cmds.Num();
 	}
 	else if (FStructProperty* StructProp = CastField<FStructProperty>(StackParams.Property))
 	{
@@ -364,10 +359,6 @@ static int32 InitFromProperty_r(
 			SharedParams.bHasNetSerializeProperties = true;
 			if (ERepBuildType::Class == BuildType && GbTrackNetSerializeObjectReferences && nullptr != SharedParams.NetSerializeLayouts && !EnumHasAnyFlags(Struct->StructFlags, STRUCT_IdenticalNative))
 			{
-				// We can't directly rely on FProperty::Identical because it's not safe for GC'd objects.
-				// So, we'll recursively build up set of layout commands for this struct, and if any
-				// are Objects, we'll use that for storing items in Shadow State and comparison.
-				// Otherwise, we'll fall back to the old behavior.
 				const int32 PrevCmdNum = SharedParams.Cmds.Num();
 
 				TArray<FRepLayoutCmd> TempCmds;
@@ -405,23 +396,16 @@ static int32 InitFromProperty_r(
 				{
 					if (NewSharedParams.bHasObjectProperties)
 					{
-						// If this is a top level Net Serialize Struct, and we found any any objects,
-						// then we need to make sure this is tracked in our map.
 						SharedParams.NetSerializeLayouts->Add(SharedParams.Cmds.Num(), MoveTemp(TempCmds));
 						StackParams.bNetSerializeStructWithObjects = true;
 					}
 				}
 				else if (!NewSharedParams.bHasObjectProperties)
 				{
-					// If this wasn't a top level Net Serialize Struct, and we didn't find any objects,
-					// we need to remove any nested entries we added to the Net Serialize Struct's layout.
-					// Instead, we'll assume this layout is FProperty safe, and add it as single command (below).
 					SharedParams.Cmds.SetNum(PrevCmdNum);
 				}
 				else
 				{
-					// This wasn't a top level Net Serialize Struct, but we did find some objects.
-					// We want to keep the layout we generated, so keep that layout
 					return NetSerializeStructOffset;
 				}
 			}
@@ -449,15 +433,6 @@ static int32 InitFromProperty_r(
 			TArray<const FStructProperty*> SubProperties;
 			if (StackParams.Property->ContainsObjectReference(SubProperties))
 			{
-				// This error indicates that we're seeing a property within some NetSerialize struct
-				// that references a UObject, but isn't handle by *normal* replication means
-				// (e.g., this could be a map or a set that we just need to compare or store, but not serialize).
-				// That's dangerous, because we will end up storing the Object Reference in the Shadow State,
-				// and it could be garbage the next time Property->Identical is called, leading to undefined behavior.
-				//
-				// The easiest fix is to convert the StructProperty's Struct Type to using either a native identity check
-				// or a native equality operator, and manually comparing just the pointer values for the object.
-
 				UE_LOG(LogRep, Warning,
 					TEXT("InitFromProperty_r: Found NetSerialize Struct Property that contains a nested UObject reference that is not tracked for replication. StructProperty=%s, NestedProperty=%s"),
 					*StackParams.RecursingNetSerializeStruct.ToString(), *StackParams.Property->GetPathName());
@@ -529,7 +504,7 @@ void FAussLayout::InitFromClass(UClass* InObjectClass)
 	Owner = InObjectClass;
 }
 
-void FAussLayout::SendProperties(const FConstRepObjectDataBuffer SourceData) const
+void FAussLayout::SendProperties(FDataStoreWriter& Ar, const FConstRepObjectDataBuffer SourceData) const
 {
 	for (int32 i = 0; i < Cmds.Num(); i++)
 	{
@@ -556,24 +531,51 @@ void FAussLayout::SendProperties(const FConstRepObjectDataBuffer SourceData) con
 				ParentCmd.Property->GetName() == "StartTime" ||
 				ParentCmd.Property->GetName() == "UniqueId")
 			{
-				UE_LOG(LogAussPlugins, Log, TEXT("SendProperties with internal property name: %s"), *Cmd.Property->GetName());
+				UE_LOG(LogAussPlugins, Log, TEXT("SendProperties scape internal property name: %s"), *Cmd.Property->GetName());
 				continue;
 			}
 
 			FConstRepObjectDataBuffer Data = (SourceData + Cmd);
 			if (Cmd.Type == ERepLayoutCmdType::PropertyString)
 			{
-				FString* tmp = (FString*)Data.Data;
-				//rcd->dynamicProperties.Add(i, *tmp);
+				Ar.Serialize((FString*)Data.Data, i);
 			}
 			else if (Cmd.Type == ERepLayoutCmdType::PropertyInt)
 			{
-				int32* tmp = (int32*)Data.Data;
-				//rcd->dynamicProperties.Add(i, FString::FromInt(*tmp));
+				FString tmp = FString::FromInt(*(int32*)Data.Data);
+				Ar.Serialize(&tmp, i);
 			}
 			else
 			{
 				UE_LOG(LogAussPlugins, Warning, TEXT("SendProperties with not supported property name: %s, type: %d"), *Cmd.Property->GetName(), Cmd.Type);
+			}
+		}
+	}
+}
+
+void FAussLayout::ReceiveProperties(FDataStoreReader& Ar, const FConstRepObjectDataBuffer SourceData) const
+{
+	for (TPair<int32, FString> elem : *Ar.GetProperties())
+	{
+		const FRepLayoutCmd& Cmd = Cmds[elem.Key];
+		const FRepParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
+		if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
+		{
+			FConstRepObjectDataBuffer Data = (SourceData + Cmd);
+			if (Cmd.Type == ERepLayoutCmdType::PropertyString)
+			{
+				FString* dataAddress = (FString*)Data.Data;
+				*dataAddress = (FString)elem.Value;
+			}
+			else if (Cmd.Type == ERepLayoutCmdType::PropertyInt)
+			{
+				int32* dataAddress = (int32*)Data.Data;
+				*dataAddress = FCString::Atoi(*elem.Value);
+			}
+			else
+			{
+				UE_LOG(LogAussPlugins, Warning, TEXT("UpdatePawnRepData not support parent name: %s, name: %s, type: %d, value: %s"),
+					*ParentCmd.Property->GetName(), *Cmd.Property->GetName(), Cmd.Type, *elem.Value);
 			}
 		}
 	}

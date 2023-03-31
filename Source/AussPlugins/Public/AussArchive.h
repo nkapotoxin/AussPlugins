@@ -1,21 +1,34 @@
 #pragma once
 
 #include "CoreTypes.h"
+#include "AussReplication.h"
 #include "Serialization/Archive.h"
 
 /**
-* Base class for serializing obj in data store.
+* Base class for serializing object in data store.
 */
-class AUSSPLUGINS_API FDataStoreArchive : public FArchive
+class AUSSPLUGINS_API FDataStoreWriter
 {
 public:
-	/**
-	 * Default Constructor
-	 */
-	FDataStoreArchive()
-	{
-		ArMaxSerializeSize = 16 * 1024 * 1024;
-	}
+	FDataStoreWriter();
+	FDataStoreWriter(TMap<int32, FString>* properties);
 
-	virtual void SerializeBitsWithOffset(void* Src, int32 SourceBit, int64 LengthBits) PURE_VIRTUAL(FDataStoreArchive::SerializeBitsWithOffset, );
+	virtual void Serialize(FString* src, int32 index);
+
+private:
+	TMap<int32, FString>* properties;
+};
+
+class AUSSPLUGINS_API FDataStoreReader
+{
+public:
+	FDataStoreReader();
+	FDataStoreReader(TMap<int32, FString>* properties);
+
+	TMap<int32, FString>* GetProperties();
+
+	virtual void Serialize(FString* src, int32 index);
+
+private:
+	TMap<int32, FString>* properties;
 };

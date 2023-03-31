@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AussArchive.h"
 #include "Net/RepLayout.h"
 
 class FAussLayout : public FGCObject, public TSharedFromThis<FAussLayout>
@@ -22,7 +23,9 @@ public:
 
 	void InitFromClass(UClass* InObjectClass);
 
-	void SendProperties(FRepCharacterData , const FConstRepObjectDataBuffer SourceData) const;
+	void SendProperties(FDataStoreWriter& Ar, const FConstRepObjectDataBuffer SourceData) const;
+
+	void ReceiveProperties(FDataStoreReader& Ar, const FConstRepObjectDataBuffer SourceData) const;
 
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
 };
