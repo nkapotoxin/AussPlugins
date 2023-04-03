@@ -9,7 +9,7 @@ FDataStoreWriter::FDataStoreWriter(TMap<int32, FString>* properties)
 {
 }
 
-void FDataStoreWriter::Serialize(FString* src, int32 index)
+void FDataStoreWriter::Serialize(const FString* src, const int32 index)
 {
 	properties->Add(index, *src);
 }
@@ -28,7 +28,7 @@ TMap<int32, FString>* FDataStoreReader::GetProperties()
 	return properties;
 }
 
-void FDataStoreReader::Serialize(FString* src, int32 index)
+void FDataStoreReader::Serialize(const FString* src, const int32 index)
 {
 	// TODO
 	(*properties)[index] = *src;

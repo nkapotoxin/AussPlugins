@@ -513,41 +513,48 @@ void FAussLayout::SendProperties(FDataStoreWriter& Ar, const FConstRepObjectData
 		if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
 		{
 			// Auss no need to replicate these internal properties
-			if (ParentCmd.Property->GetName() == "bReplicateMovement" ||
-				ParentCmd.Property->GetName() == "bHidden" ||
-				ParentCmd.Property->GetName() == "bTearOff" ||
-				ParentCmd.Property->GetName() == "bCanBeDamaged" ||
-				ParentCmd.Property->GetName() == "RemoteRole" ||
-				ParentCmd.Property->GetName() == "ReplicatedMovement" ||
-				ParentCmd.Property->GetName() == "AttachmentReplication" ||
-				ParentCmd.Property->GetName() == "Owner" ||
-				ParentCmd.Property->GetName() == "Role" ||
-				ParentCmd.Property->GetName() == "Instigator" ||
-				ParentCmd.Property->GetName() == "bIsSpectator" ||
-				ParentCmd.Property->GetName() == "bOnlySpectator" ||
-				ParentCmd.Property->GetName() == "bIsABot" ||
-				ParentCmd.Property->GetName() == "bIsInactive" ||
-				ParentCmd.Property->GetName() == "bFromPreviousLevel" ||
-				ParentCmd.Property->GetName() == "StartTime" ||
-				ParentCmd.Property->GetName() == "UniqueId")
+			const FString propertyName = ParentCmd.Property->GetName();
+			if (propertyName == "bReplicateMovement" ||
+				propertyName == "bHidden" ||
+				propertyName == "bTearOff" ||
+				propertyName == "bCanBeDamaged" ||
+				propertyName == "RemoteRole" ||
+				propertyName == "ReplicatedMovement" ||
+				propertyName == "AttachmentReplication" ||
+				propertyName == "Owner" ||
+				propertyName == "Role" ||
+				propertyName == "Instigator" ||
+				propertyName == "bIsSpectator" ||
+				propertyName == "bOnlySpectator" ||
+				propertyName == "bIsABot" ||
+				propertyName == "bIsInactive" ||
+				propertyName == "bFromPreviousLevel" ||
+				propertyName == "StartTime" ||
+				propertyName == "UniqueId")
 			{
-				UE_LOG(LogAussPlugins, Log, TEXT("SendProperties scape internal property name: %s"), *Cmd.Property->GetName());
+				UE_LOG(LogAussPlugins, Log, TEXT("SendProperties scape internal property name: %s"), *propertyName);
 				continue;
 			}
 
-			FConstRepObjectDataBuffer Data = (SourceData + Cmd);
+			const FConstRepObjectDataBuffer Data = (SourceData + Cmd);
 			if (Cmd.Type == ERepLayoutCmdType::PropertyString)
 			{
-				Ar.Serialize((FString*)Data.Data, i);
+				Ar.Serialize((const FString*)Data.Data, i);
 			}
 			else if (Cmd.Type == ERepLayoutCmdType::PropertyInt)
 			{
-				FString tmp = FString::FromInt(*(int32*)Data.Data);
+				const FString tmp = FString::FromInt(*(const int32*)Data.Data);
+				Ar.Serialize(&tmp, i);
+			}
+			else if (Cmd.Type == ERepLayoutCmdType::PropertyFloat)
+			{
+				// TODO(nkpatx): jindu optimize
+				const FString tmp = FString::SanitizeFloat(*(const float*)Data.Data);
 				Ar.Serialize(&tmp, i);
 			}
 			else
 			{
-				UE_LOG(LogAussPlugins, Warning, TEXT("SendProperties with not supported property name: %s, type: %d"), *Cmd.Property->GetName(), Cmd.Type);
+				UE_LOG(LogAussPlugins, Warning, TEXT("SendProperties with not supported property name: %s, type: %d"), *propertyName, Cmd.Type);
 			}
 		}
 	}
@@ -561,7 +568,7 @@ void FAussLayout::ReceiveProperties(FDataStoreReader& Ar, const FConstRepObjectD
 		const FRepParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
 		if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
 		{
-			FConstRepObjectDataBuffer Data = (SourceData + Cmd);
+			const FConstRepObjectDataBuffer Data = (SourceData + Cmd);
 			if (Cmd.Type == ERepLayoutCmdType::PropertyString)
 			{
 				FString* dataAddress = (FString*)Data.Data;
@@ -571,6 +578,11 @@ void FAussLayout::ReceiveProperties(FDataStoreReader& Ar, const FConstRepObjectD
 			{
 				int32* dataAddress = (int32*)Data.Data;
 				*dataAddress = FCString::Atoi(*elem.Value);
+			}
+			else if (Cmd.Type == ERepLayoutCmdType::PropertyFloat)
+			{
+				float* dataAddress = (float*)Data.Data;
+				*dataAddress = FCString::Atof(*elem.Value);
 			}
 			else
 			{
@@ -590,7 +602,6 @@ void FAussLayout::AddReferencedObjects(FReferenceCollector& Collector)
 		if (Current != nullptr)
 		{
 			Current->AddReferencedObjects(Collector);
-
 			if (Current == nullptr)
 			{
 				Parent.Property = nullptr;

@@ -13,7 +13,7 @@ public:
 	FDataStoreWriter();
 	FDataStoreWriter(TMap<int32, FString>* properties);
 
-	virtual void Serialize(FString* src, int32 index);
+	virtual void Serialize(const FString* src, const int32 index);
 
 private:
 	TMap<int32, FString>* properties;
@@ -27,7 +27,7 @@ public:
 
 	TMap<int32, FString>* GetProperties();
 
-	virtual void Serialize(FString* src, int32 index);
+	virtual void Serialize(const FString* src, const int32 index);
 
 private:
 	TMap<int32, FString>* properties;
