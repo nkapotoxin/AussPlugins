@@ -411,7 +411,7 @@ void AAussTicker::UpdateLocalPawn()
 void AAussTicker::GetPawnRepData(APawn* pawn, FRepCharacterData* rcd)
 {
 	// add magic code here
-	const FConstRepObjectDataBuffer sourceData = pawn->GetPlayerState();
+	const FConstAussObjectDataBuffer sourceData = pawn->GetPlayerState();
 	FDataStoreWriter writer( &rcd->dynamicProperties );
 
 	playerStateLayout->SendProperties(writer, sourceData);
@@ -420,7 +420,7 @@ void AAussTicker::GetPawnRepData(APawn* pawn, FRepCharacterData* rcd)
 void AAussTicker::UpdatePawnRepData(APawn* pawn, FRepCharacterData* rcd)
 {
 	// add magic code here
-	const FConstRepObjectDataBuffer sourceData = pawn->GetPlayerState();
+	const FConstAussObjectDataBuffer sourceData = pawn->GetPlayerState();
 	FDataStoreReader reader( &rcd->dynamicProperties );
 
 	playerStateLayout->ReceiveProperties(reader, sourceData);

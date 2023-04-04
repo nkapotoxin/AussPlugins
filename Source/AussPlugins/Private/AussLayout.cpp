@@ -1,7 +1,5 @@
-#pragma once
-
-#include "Log.h"
 #include "AussLayout.h"
+#include "Log.h"
 
 FAussLayout::FAussLayout()
 	: Owner(nullptr)
@@ -13,13 +11,13 @@ FAussLayout::~FAussLayout()
 
 struct FInitFromPropertySharedParams
 {
-	TArray<FRepLayoutCmd>& Cmds;
+	TArray<FAussLayoutCmd>& Cmds;
 	const UNetConnection* ServerConnection;
 	const int32 ParentIndex;
-	FRepParentCmd& Parent;
+	FAussParentCmd& Parent;
 	bool bHasObjectProperties = false;
 	bool bHasNetSerializeProperties = false;
-	TMap<int32, TArray<FRepLayoutCmd>>* NetSerializeLayouts = nullptr;
+	TMap<int32, TArray<FAussLayoutCmd>>* NetSerializeLayouts = nullptr;
 };
 
 struct FInitFromPropertyStackParams
@@ -42,14 +40,14 @@ static FName NAME_RepMovement(TEXT("RepMovement"));
 
 bool GbTrackNetSerializeObjectReferences = false;
 
-enum class ERepBuildType
+enum class EAussBuildType
 {
 	Class,
 	Function,
 	Struct
 };
 
-template<ERepBuildType BuildType>
+template<EAussBuildType BuildType>
 static int32 InitFromProperty_r(
 	FInitFromPropertySharedParams& SharedParams,
 	FInitFromPropertyStackParams StackParams);
@@ -62,14 +60,14 @@ TSharedPtr<FAussLayout> FAussLayout::CreateFromClass(UClass* InClass)
 }
 
 static FORCEINLINE uint16 AddParentProperty(
-	TArray<FRepParentCmd>& Parents,
+	TArray<FAussParentCmd>& Parents,
 	FProperty* Property,
 	int32 ArrayIndex)
 {
 	return Parents.Emplace(Property, ArrayIndex);
 }
 
-template<ERepBuildType BuildType>
+template<EAussBuildType BuildType>
 static int32 InitFromStructProperty(
 	FInitFromPropertySharedParams& SharedParams,
 	FInitFromPropertyStackParams StackParams,
@@ -108,7 +106,7 @@ static int32 InitFromStructProperty(
 
 	Sort(NetProperties.GetData(), NetProperties.Num(), FCompareUFieldOffsets());
 
-	const uint32 StructChecksum = GetRepLayoutCmdCompatibleChecksum(SharedParams, StackParams);
+	const uint32 StructChecksum = GetLayoutCmdCompatibleChecksum(SharedParams, StackParams);
 
 	for (int32 i = 0; i < NetProperties.Num(); i++)
 	{
@@ -132,19 +130,19 @@ static int32 InitFromStructProperty(
 	return StackParams.RelativeHandle;
 }
 
-template<ERepBuildType BuildType>
+template<EAussBuildType BuildType>
 static FORCEINLINE const int32 GetOffsetForProperty(const FProperty& Property)
 {
 	return Property.GetOffset_ForGC();
 }
 
 template<>
-const FORCEINLINE int32 GetOffsetForProperty<ERepBuildType::Function>(const FProperty& Property)
+const FORCEINLINE int32 GetOffsetForProperty<EAussBuildType::Function>(const FProperty& Property)
 {
 	return Property.GetOffset_ForUFunction();
 }
 
-static uint32 GetRepLayoutCmdCompatibleChecksum(
+static uint32 GetLayoutCmdCompatibleChecksum(
 	const FProperty* Property,
 	const UNetConnection* ServerConnection,
 	const uint32			StaticArrayIndex,
@@ -154,26 +152,26 @@ static uint32 GetRepLayoutCmdCompatibleChecksum(
 	return 0;
 }
 
-static uint32 GetRepLayoutCmdCompatibleChecksum(
+static uint32 GetLayoutCmdCompatibleChecksum(
 	FInitFromPropertySharedParams& SharedParams,
 	const FInitFromPropertyStackParams& StackParams)
 {
-	return GetRepLayoutCmdCompatibleChecksum(StackParams.Property, SharedParams.ServerConnection, StackParams.StaticArrayIndex, StackParams.ParentChecksum);
+	return GetLayoutCmdCompatibleChecksum(StackParams.Property, SharedParams.ServerConnection, StackParams.StaticArrayIndex, StackParams.ParentChecksum);
 }
 
 static uint32 AddPropertyCmd(
 	FInitFromPropertySharedParams& SharedParams,
 	const FInitFromPropertyStackParams& StackParams)
 {
-	FRepLayoutCmd& Cmd = SharedParams.Cmds.AddZeroed_GetRef();
+	FAussLayoutCmd& Cmd = SharedParams.Cmds.AddZeroed_GetRef();
 
 	Cmd.Property = StackParams.Property;
-	Cmd.Type = ERepLayoutCmdType::Property;		// Initially set to generic type
+	Cmd.Type = EAussLayoutCmdType::Property;		// Initially set to generic type
 	Cmd.Offset = StackParams.Offset;
 	Cmd.ElementSize = Cmd.Property->ElementSize;
 	Cmd.RelativeHandle = StackParams.RelativeHandle;
 	Cmd.ParentIndex = SharedParams.ParentIndex;
-	Cmd.CompatibleChecksum = GetRepLayoutCmdCompatibleChecksum(SharedParams, StackParams);
+	Cmd.CompatibleChecksum = GetLayoutCmdCompatibleChecksum(SharedParams, StackParams);
 
 	FProperty* UnderlyingProperty = Cmd.Property;
 	if (FEnumProperty* EnumProperty = CastField<FEnumProperty>(UnderlyingProperty))
@@ -186,47 +184,47 @@ static uint32 AddPropertyCmd(
 	{
 		FStructProperty* StructProp = CastField<FStructProperty>(UnderlyingProperty);
 		UScriptStruct* Struct = StructProp->Struct;
-		Cmd.Flags |= ERepLayoutCmdFlags::IsStruct;
+		Cmd.Flags |= EAussLayoutCmdFlags::IsStruct;
 
 		if (Struct->GetFName() == NAME_Vector)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyVector;
+			Cmd.Type = EAussLayoutCmdType::PropertyVector;
 		}
 		else if (Struct->GetFName() == NAME_Rotator)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyRotator;
+			Cmd.Type = EAussLayoutCmdType::PropertyRotator;
 		}
 		else if (Struct->GetFName() == NAME_Plane)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyPlane;
+			Cmd.Type = EAussLayoutCmdType::PropertyPlane;
 		}
 		else if (Struct->GetFName() == NAME_Vector_NetQuantize100)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyVector100;
+			Cmd.Type = EAussLayoutCmdType::PropertyVector100;
 		}
 		else if (Struct->GetFName() == NAME_Vector_NetQuantize10)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyVector10;
+			Cmd.Type = EAussLayoutCmdType::PropertyVector10;
 		}
 		else if (Struct->GetFName() == NAME_Vector_NetQuantizeNormal)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyVectorNormal;
+			Cmd.Type = EAussLayoutCmdType::PropertyVectorNormal;
 		}
 		else if (Struct->GetFName() == NAME_Vector_NetQuantize)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyVectorQ;
+			Cmd.Type = EAussLayoutCmdType::PropertyVectorQ;
 		}
 		else if (Struct->GetFName() == NAME_UniqueNetIdRepl)
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyNetId;
+			Cmd.Type = EAussLayoutCmdType::PropertyNetId;
 		}
 		else if (Struct->GetFName() == NAME_RepMovement)
 		{
-			Cmd.Type = ERepLayoutCmdType::RepMovement;
+			Cmd.Type = EAussLayoutCmdType::RepMovement;
 		}
 		else if (StackParams.bNetSerializeStructWithObjects)
 		{
-			Cmd.Type = ERepLayoutCmdType::NetSerializeStructWithObjectReferences;
+			Cmd.Type = EAussLayoutCmdType::NetSerializeStructWithObjectReferences;
 		}
 		else
 		{
@@ -236,51 +234,51 @@ static uint32 AddPropertyCmd(
 	else if (UnderlyingProperty->IsA(FBoolProperty::StaticClass()))
 	{
 		const FBoolProperty* BoolProperty = static_cast<FBoolProperty*>(UnderlyingProperty);
-		Cmd.Type = BoolProperty->IsNativeBool() ? ERepLayoutCmdType::PropertyNativeBool : ERepLayoutCmdType::PropertyBool;
+		Cmd.Type = BoolProperty->IsNativeBool() ? EAussLayoutCmdType::PropertyNativeBool : EAussLayoutCmdType::PropertyBool;
 	}
 	else if (UnderlyingProperty->IsA(FFloatProperty::StaticClass()))
 	{
-		Cmd.Type = ERepLayoutCmdType::PropertyFloat;
+		Cmd.Type = EAussLayoutCmdType::PropertyFloat;
 	}
 	else if (UnderlyingProperty->IsA(FIntProperty::StaticClass()))
 	{
-		Cmd.Type = ERepLayoutCmdType::PropertyInt;
+		Cmd.Type = EAussLayoutCmdType::PropertyInt;
 	}
 	else if (UnderlyingProperty->IsA(FByteProperty::StaticClass()))
 	{
-		Cmd.Type = ERepLayoutCmdType::PropertyByte;
+		Cmd.Type = EAussLayoutCmdType::PropertyByte;
 	}
 	else if (UnderlyingProperty->IsA(FObjectPropertyBase::StaticClass()))
 	{
 		SharedParams.bHasObjectProperties = true;
 		if (UnderlyingProperty->IsA(FSoftObjectProperty::StaticClass()))
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertySoftObject;
+			Cmd.Type = EAussLayoutCmdType::PropertySoftObject;
 		}
 		else if (UnderlyingProperty->IsA(FWeakObjectProperty::StaticClass()))
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyWeakObject;
+			Cmd.Type = EAussLayoutCmdType::PropertyWeakObject;
 		}
 		else
 		{
-			Cmd.Type = ERepLayoutCmdType::PropertyObject;
+			Cmd.Type = EAussLayoutCmdType::PropertyObject;
 		}
 	}
 	else if (UnderlyingProperty->IsA(FNameProperty::StaticClass()))
 	{
-		Cmd.Type = ERepLayoutCmdType::PropertyName;
+		Cmd.Type = EAussLayoutCmdType::PropertyName;
 	}
 	else if (UnderlyingProperty->IsA(FUInt32Property::StaticClass()))
 	{
-		Cmd.Type = ERepLayoutCmdType::PropertyUInt32;
+		Cmd.Type = EAussLayoutCmdType::PropertyUInt32;
 	}
 	else if (UnderlyingProperty->IsA(FUInt64Property::StaticClass()))
 	{
-		Cmd.Type = ERepLayoutCmdType::PropertyUInt64;
+		Cmd.Type = EAussLayoutCmdType::PropertyUInt64;
 	}
 	else if (UnderlyingProperty->IsA(FStrProperty::StaticClass()))
 	{
-		Cmd.Type = ERepLayoutCmdType::PropertyString;
+		Cmd.Type = EAussLayoutCmdType::PropertyString;
 	}
 	else
 	{
@@ -289,7 +287,7 @@ static uint32 AddPropertyCmd(
 
 	if (Cmd.Property->SupportsNetSharedSerialization() && (Cmd.Property->GetFName() != NAME_RemoteRole))
 	{
-		Cmd.Flags |= ERepLayoutCmdFlags::IsSharedSerialization;
+		Cmd.Flags |= EAussLayoutCmdFlags::IsSharedSerialization;
 	}
 
 	return Cmd.CompatibleChecksum;
@@ -299,25 +297,25 @@ static FORCEINLINE uint32 AddArrayCmd(
 	FInitFromPropertySharedParams& SharedParams,
 	const FInitFromPropertyStackParams StackParams)
 {
-	FRepLayoutCmd& Cmd = SharedParams.Cmds.AddZeroed_GetRef();
+	FAussLayoutCmd& Cmd = SharedParams.Cmds.AddZeroed_GetRef();
 
-	Cmd.Type = ERepLayoutCmdType::DynamicArray;
+	Cmd.Type = EAussLayoutCmdType::DynamicArray;
 	Cmd.Property = StackParams.Property;
 	Cmd.Offset = StackParams.Offset;
 	Cmd.ElementSize = static_cast<FArrayProperty*>(StackParams.Property)->Inner->ElementSize;
 	Cmd.RelativeHandle = StackParams.RelativeHandle;
 	Cmd.ParentIndex = SharedParams.ParentIndex;
-	Cmd.CompatibleChecksum = GetRepLayoutCmdCompatibleChecksum(SharedParams, StackParams);
+	Cmd.CompatibleChecksum = GetLayoutCmdCompatibleChecksum(SharedParams, StackParams);
 
 	return Cmd.CompatibleChecksum;
 }
 
-static FORCEINLINE void AddReturnCmd(TArray<FRepLayoutCmd>& Cmds)
+static FORCEINLINE void AddReturnCmd(TArray<FAussLayoutCmd>& Cmds)
 {
-	Cmds.AddZeroed_GetRef().Type = ERepLayoutCmdType::Return;
+	Cmds.AddZeroed_GetRef().Type = EAussLayoutCmdType::Return;
 }
 
-template<ERepBuildType BuildType>
+template<EAussBuildType BuildType>
 static int32 InitFromProperty_r(
 	FInitFromPropertySharedParams& SharedParams,
 	FInitFromPropertyStackParams StackParams)
@@ -325,7 +323,7 @@ static int32 InitFromProperty_r(
 	if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(StackParams.Property))
 	{
 		const int32 CmdStart = SharedParams.Cmds.Num();
-		SharedParams.Parent.Flags |= ERepParentFlags::HasDynamicArrayProperties;
+		SharedParams.Parent.Flags |= EAussParentFlags::HasDynamicArrayProperties;
 
 		++StackParams.RelativeHandle;
 		StackParams.Offset += GetOffsetForProperty<BuildType>(*ArrayProp);
@@ -357,12 +355,12 @@ static int32 InitFromProperty_r(
 			UE_CLOG(EnumHasAnyFlags(Struct->StructFlags, STRUCT_NetDeltaSerializeNative), LogRep, Warning, TEXT("RepLayout InitFromProperty_r: Struct marked both NetSerialize and NetDeltaSerialize: %s"), *StructProp->GetName());
 
 			SharedParams.bHasNetSerializeProperties = true;
-			if (ERepBuildType::Class == BuildType && GbTrackNetSerializeObjectReferences && nullptr != SharedParams.NetSerializeLayouts && !EnumHasAnyFlags(Struct->StructFlags, STRUCT_IdenticalNative))
+			if (EAussBuildType::Class == BuildType && GbTrackNetSerializeObjectReferences && nullptr != SharedParams.NetSerializeLayouts && !EnumHasAnyFlags(Struct->StructFlags, STRUCT_IdenticalNative))
 			{
 				const int32 PrevCmdNum = SharedParams.Cmds.Num();
 
-				TArray<FRepLayoutCmd> TempCmds;
-				TArray<FRepLayoutCmd>* NewCmds = &TempCmds;
+				TArray<FAussLayoutCmd> TempCmds;
+				TArray<FAussLayoutCmd>* NewCmds = &TempCmds;
 
 				FInitFromPropertyStackParams NewStackParams{
 					/*Property=*/StackParams.Property,
@@ -428,7 +426,7 @@ static int32 InitFromProperty_r(
 		AddPropertyCmd(SharedParams, StackParams);
 
 		if (StackParams.RecursingNetSerializeStruct != NAME_None &&
-			ERepLayoutCmdType::Property == SharedParams.Cmds.Last().Type)
+			EAussLayoutCmdType::Property == SharedParams.Cmds.Last().Type)
 		{
 			TArray<const FStructProperty*> SubProperties;
 			if (StackParams.Property->ContainsObjectReference(SubProperties))
@@ -450,7 +448,7 @@ void FAussLayout::InitFromClass(UClass* InObjectClass)
 	int32 RelativeHandle = 0;
 	int32 LastOffset = INDEX_NONE;
 	int32 HighestCustomDeltaRepIndex = INDEX_NONE;
-	TMap<int32, TArray<FRepLayoutCmd>> TempNetSerializeLayouts;
+	TMap<int32, TArray<FAussLayoutCmd>> TempNetSerializeLayouts;
 
 	InObjectClass->SetUpRuntimeReplicationData();
 	Parents.Empty(InObjectClass->ClassReps.Num());
@@ -488,10 +486,10 @@ void FAussLayout::InitFromClass(UClass* InObjectClass)
 		};
 
 		Parents[ParentHandle].CmdStart = Cmds.Num();
-		RelativeHandle = InitFromProperty_r<ERepBuildType::Class>(SharedParams, StackParams);
+		RelativeHandle = InitFromProperty_r<EAussBuildType::Class>(SharedParams, StackParams);
 		Parents[ParentHandle].CmdEnd = Cmds.Num();
-		Parents[ParentHandle].Flags |= ERepParentFlags::IsConditional;
-		Parents[ParentHandle].Offset = GetOffsetForProperty<ERepBuildType::Class>(*Property) + ParentOffset;
+		Parents[ParentHandle].Flags |= EAussParentFlags::IsConditional;
+		Parents[ParentHandle].Offset = GetOffsetForProperty<EAussBuildType::Class>(*Property) + ParentOffset;
 
 		if (Parents[i].CmdEnd > Parents[i].CmdStart)
 		{
@@ -504,12 +502,12 @@ void FAussLayout::InitFromClass(UClass* InObjectClass)
 	Owner = InObjectClass;
 }
 
-void FAussLayout::SendProperties(FDataStoreWriter& Ar, const FConstRepObjectDataBuffer SourceData) const
+void FAussLayout::SendProperties(FDataStoreWriter& Ar, const FConstAussObjectDataBuffer SourceData) const
 {
 	for (int32 i = 0; i < Cmds.Num(); i++)
 	{
-		const FRepLayoutCmd& Cmd = Cmds[i];
-		const FRepParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
+		const FAussLayoutCmd& Cmd = Cmds[i];
+		const FAussParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
 		if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
 		{
 			// Auss no need to replicate these internal properties
@@ -536,17 +534,17 @@ void FAussLayout::SendProperties(FDataStoreWriter& Ar, const FConstRepObjectData
 				continue;
 			}
 
-			const FConstRepObjectDataBuffer Data = (SourceData + Cmd);
-			if (Cmd.Type == ERepLayoutCmdType::PropertyString)
+			const FConstAussObjectDataBuffer Data = (SourceData + Cmd);
+			if (Cmd.Type == EAussLayoutCmdType::PropertyString)
 			{
 				Ar.Serialize((const FString*)Data.Data, i);
 			}
-			else if (Cmd.Type == ERepLayoutCmdType::PropertyInt)
+			else if (Cmd.Type == EAussLayoutCmdType::PropertyInt)
 			{
 				const FString tmp = FString::FromInt(*(const int32*)Data.Data);
 				Ar.Serialize(&tmp, i);
 			}
-			else if (Cmd.Type == ERepLayoutCmdType::PropertyFloat)
+			else if (Cmd.Type == EAussLayoutCmdType::PropertyFloat)
 			{
 				// TODO(nkpatx): jindu optimize
 				const FString tmp = FString::SanitizeFloat(*(const float*)Data.Data);
@@ -560,26 +558,26 @@ void FAussLayout::SendProperties(FDataStoreWriter& Ar, const FConstRepObjectData
 	}
 }
 
-void FAussLayout::ReceiveProperties(FDataStoreReader& Ar, const FConstRepObjectDataBuffer SourceData) const
+void FAussLayout::ReceiveProperties(FDataStoreReader& Ar, const FConstAussObjectDataBuffer SourceData) const
 {
 	for (TPair<int32, FString> elem : *Ar.GetProperties())
 	{
-		const FRepLayoutCmd& Cmd = Cmds[elem.Key];
-		const FRepParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
+		const FAussLayoutCmd& Cmd = Cmds[elem.Key];
+		const FAussParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
 		if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
 		{
-			const FConstRepObjectDataBuffer Data = (SourceData + Cmd);
-			if (Cmd.Type == ERepLayoutCmdType::PropertyString)
+			const FConstAussObjectDataBuffer Data = (SourceData + Cmd);
+			if (Cmd.Type == EAussLayoutCmdType::PropertyString)
 			{
 				FString* dataAddress = (FString*)Data.Data;
 				*dataAddress = (FString)elem.Value;
 			}
-			else if (Cmd.Type == ERepLayoutCmdType::PropertyInt)
+			else if (Cmd.Type == EAussLayoutCmdType::PropertyInt)
 			{
 				int32* dataAddress = (int32*)Data.Data;
 				*dataAddress = FCString::Atoi(*elem.Value);
 			}
-			else if (Cmd.Type == ERepLayoutCmdType::PropertyFloat)
+			else if (Cmd.Type == EAussLayoutCmdType::PropertyFloat)
 			{
 				float* dataAddress = (float*)Data.Data;
 				*dataAddress = FCString::Atof(*elem.Value);
@@ -596,7 +594,7 @@ void FAussLayout::ReceiveProperties(FDataStoreReader& Ar, const FConstRepObjectD
 void FAussLayout::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	FProperty* Current = nullptr;
-	for (FRepParentCmd& Parent : Parents)
+	for (FAussParentCmd& Parent : Parents)
 	{
 		Current = Parent.Property;
 		if (Current != nullptr)
@@ -609,3 +607,5 @@ void FAussLayout::AddReferencedObjects(FReferenceCollector& Collector)
 		}
 	}
 }
+
+
