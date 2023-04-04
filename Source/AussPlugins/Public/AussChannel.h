@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AussObjectReplicator.h"
 #include "AussChannel.generated.h"
 
 UCLASS()
@@ -14,12 +15,23 @@ public:
 
 	FString AussGUID;
 
-	UAussChannel();
+	FAussLayoutHelper* RepLayoutHelper;
 
+	UAussChannel();
 	~UAussChannel();
 
 	AActor* GetActor() { return Actor; }
 
+	void SetLayoutHelper(FAussLayoutHelper* InRepLayoutHelper) { RepLayoutHelper = InRepLayoutHelper; }
+
 	void SetChannelActor(AActor* InActor);
+
+	TSharedPtr<FAussObjectReplicator> CreateReplicatorForNewActorChannel(UObject* Object, FAussLayoutHelper* LayoutHelper);
+public:
+	TSharedPtr<FAussObjectReplicator> ActorReplicator;
+	TMap< UObject*, TSharedRef< FAussObjectReplicator > > ReplicationMap;
+
+protected:
+	TSharedRef< FAussObjectReplicator >& FindOrCreateReplicator(UObject* Obj, bool* bOutCreated = nullptr);
 };
 

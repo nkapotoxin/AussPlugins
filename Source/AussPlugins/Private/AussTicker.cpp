@@ -408,13 +408,40 @@ void AAussTicker::UpdateLocalPawn()
 }
 
 
-void AAussTicker::GetPawnRepData(APawn* pawn, FRepCharacterData* rcd)
+void AAussTicker::GetPawnRepData(FString entityId, APawn* pawn, FRepCharacterData* rcd)
 {
-	// add magic code here
-	const FConstAussObjectDataBuffer sourceData = pawn->GetPlayerState();
-	FDataStoreWriter writer( &rcd->dynamicProperties );
+	UAussChannel** channelPtr = allChannels.Find(entityId);
+	if (channelPtr == nullptr)
+	{
+		// create channel
+		UAussChannel* tmp = NewObject<UAussChannel>();
 
-	playerStateLayout->SendProperties(writer, sourceData);
+		FAussLayoutHelper* InRepLayoutHelper = new FAussLayoutHelper();
+
+		// setup
+		tmp->SetLayoutHelper(InRepLayoutHelper);
+
+		tmp->SetChannelActor(pawn->GetPlayerState());
+		allChannels.Add(entityId, tmp);
+
+		channelPtr = &tmp;
+	}
+
+	if (!channelPtr && !*channelPtr)
+	{
+		UAussChannel* ch = *channelPtr;
+		if (ch->ActorReplicator())
+		{
+
+		}
+
+	}
+
+	//// add magic code here
+	//const FConstAussObjectDataBuffer sourceData = pawn->GetPlayerState();
+	//FDataStoreWriter writer( &rcd->dynamicProperties );
+
+	//playerStateLayout->SendProperties(writer, sourceData);
 }
 
 void AAussTicker::UpdatePawnRepData(APawn* pawn, FRepCharacterData* rcd)
@@ -443,7 +470,7 @@ FRepCharacterData AAussTicker::GetReplicationDataFromPawn(FString entityId, APaw
 		return result;
 	}
 
-	GetPawnRepData(pawn, &result);
+	GetPawnRepData(entityId, pawn, &result);
 
 	// Add walk speed
 	if (ACharacter* ach = Cast<ACharacter>(pawn))

@@ -608,4 +608,83 @@ void FAussLayout::AddReferencedObjects(FReferenceCollector& Collector)
 	}
 }
 
+void FAussLayout::InitRepStateStaticBuffer(FAussStateStaticBuffer& ShadowData, const FConstAussObjectDataBuffer Source) const
+{
+	check(ShadowData.Buffer.Num() == 0);
+	ShadowData.Buffer.SetNumZeroed(ShadowDataBufferSize);
+	ConstructProperties(ShadowData);
+	CopyProperties(ShadowData, Source);
+}
 
+void FAussLayout::ConstructProperties(FAussStateStaticBuffer& InShadowData) const
+{
+	FAussShadowDataBuffer ShadowData = InShadowData.GetData();
+	for (const FAussParentCmd& Parent : Parents)
+	{
+		if (Parent.ArrayIndex == 0)
+		{
+			check((Parent.ShadowOffset + Parent.Property->GetSize()) <= InShadowData.Num());
+			Parent.Property->InitializeValue(ShadowData + Parent);
+		}
+	}
+}
+
+void FAussLayout::DestructProperties(FAussStateStaticBuffer& InShadowData) const
+{
+	FAussShadowDataBuffer ShadowData = InShadowData.GetData();
+	for (const FAussParentCmd& Parent : Parents)
+	{
+		if (Parent.ArrayIndex == 0)
+		{
+			check((Parent.ShadowOffset + Parent.Property->GetSize()) <= InShadowData.Num());
+			Parent.Property->DestroyValue(ShadowData + Parent);
+		}
+	}
+
+	InShadowData.Buffer.Empty();
+}
+
+void FAussLayout::CopyProperties(FAussStateStaticBuffer& InShadowData, const FConstAussObjectDataBuffer Source) const
+{
+	FAussShadowDataBuffer ShadowData = InShadowData.GetData();
+	for (const FAussParentCmd& Parent : Parents)
+	{
+		if (Parent.ArrayIndex == 0)
+		{
+			check((Parent.ShadowOffset + Parent.Property->GetSize()) <= InShadowData.Num());
+			Parent.Property->CopyCompleteValue(ShadowData + Parent, Source + Parent);
+		}
+	}
+}
+
+TUniquePtr<FAussState> FAussLayout::CreateRepState(const FConstAussObjectDataBuffer Source) const
+{
+	TUniquePtr<FAussState> RepState(new FAussState());
+	FAussStateStaticBuffer StaticBuffer(AsShared());
+
+	//InitRepStateStaticBuffer(StaticBuffer, Source);
+	RepState->ReceivingState.Reset(new FAussReceivingState(MoveTemp(StaticBuffer)));
+
+	return RepState;
+}
+
+
+FAussStateStaticBuffer::~FAussStateStaticBuffer()
+{
+	//  TODO(nkpatx): release ptrs
+}
+
+FAussReceivingState::FAussReceivingState(FAussStateStaticBuffer&& InStaticBuffer)
+	: StaticBuffer(MoveTemp(InStaticBuffer))
+{}
+
+TSharedPtr<FAussLayout>	FAussLayoutHelper::GetObjectClassRepLayout(UClass* Class)
+{
+	TSharedPtr<FAussLayout>* RepLayoutPtr = RepLayoutMap.Find(Class);
+	if (!RepLayoutPtr)
+	{
+		RepLayoutPtr = &RepLayoutMap.Add(Class, FAussLayout::CreateFromClass(Class));
+	}
+
+	return *RepLayoutPtr;
+}

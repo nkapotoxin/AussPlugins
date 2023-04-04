@@ -2,6 +2,11 @@
 
 #include "AussArchive.h"
 
+class FAussState;
+class FAussReceivingState;
+class FAussSendingState;
+class FAussLayoutCmd;
+
 enum class EAussLayoutCmdType : uint8
 {
 	DynamicArray = 0,	//! Dynamic array
@@ -34,8 +39,8 @@ enum class EAussLayoutCmdType : uint8
 
 enum class EAussDataBufferType
 {
-	ObjectBuffer,	//! Indicates this buffer is a full object's memory.
-	ShadowBuffer	//! Indicates this buffer is a packed shadow buffer.
+	ObjectBuffer,	
+	ShadowBuffer	
 };
 
 namespace Auss_RepLayout_Private
@@ -186,32 +191,6 @@ enum class EAussCreateRepStateFlags : uint32
 };
 ENUM_CLASS_FLAGS(EAussCreateRepStateFlags);
 
-class FAussLayout : public FGCObject, public TSharedFromThis<FAussLayout>
-{
-private:
-	FAussLayout();
-
-public:
-	virtual ~FAussLayout();
-
-	/** All Layout Commands. */
-	TArray<FAussLayoutCmd> Cmds;
-
-	/** Top level Layout Commands. */
-	TArray<FAussParentCmd> Parents;
-
-	UStruct* Owner;
-
-	static TSharedPtr<FAussLayout> CreateFromClass(UClass* InObjectClass);
-
-	void InitFromClass(UClass* InObjectClass);
-
-	void SendProperties(FDataStoreWriter& Ar, const FConstAussObjectDataBuffer SourceData) const;
-
-	void ReceiveProperties(FDataStoreReader& Ar, const FConstAussObjectDataBuffer SourceData) const;
-
-	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
-};
 
 class FAussChangedHistory
 {
@@ -313,7 +292,7 @@ public:
 class FAussState : public FNoncopyable
 {
 private:
-	friend FAussLayout;
+	friend class FAussLayout;
 
 	FAussState() {}
 
@@ -340,4 +319,61 @@ public:
 	{
 		return SendingState.Get();
 	}
+};
+
+
+class FAussLayoutHelper
+{
+private:
+	friend class FAussLayout;
+
+public:
+	FAussLayoutHelper() {}
+	~FAussLayoutHelper() {}
+
+	TMap<TWeakObjectPtr<UObject>, TSharedPtr<FAussLayout>, FDefaultSetAllocator, TWeakObjectPtrMapKeyFuncs<TWeakObjectPtr<UObject>, TSharedPtr<FAussLayout> > >	RepLayoutMap;
+public:
+	TSharedPtr<FAussLayout>	GetObjectClassRepLayout(UClass* InClass);
+};
+
+
+class FAussLayout : public FGCObject, public TSharedFromThis<FAussLayout>
+{
+private:
+	friend struct FAussStateStaticBuffer;
+
+	FAussLayout();
+
+public:
+	virtual ~FAussLayout();
+
+	int32 ShadowDataBufferSize;
+
+	/** All Layout Commands. */
+	TArray<FAussLayoutCmd> Cmds;
+
+	/** Top level Layout Commands. */
+	TArray<FAussParentCmd> Parents;
+
+	UStruct* Owner;
+
+	static TSharedPtr<FAussLayout> CreateFromClass(UClass* InObjectClass);
+
+	void InitFromClass(UClass* InObjectClass);
+
+	void SendProperties(FDataStoreWriter& Ar, const FConstAussObjectDataBuffer SourceData) const;
+
+	void ReceiveProperties(FDataStoreReader& Ar, const FConstAussObjectDataBuffer SourceData) const;
+
+	TUniquePtr<FAussState> CreateRepState(const FConstAussObjectDataBuffer Source) const;
+
+	void InitRepStateStaticBuffer(FAussStateStaticBuffer& ShadowData, const FConstAussObjectDataBuffer Source) const;
+
+	void ConstructProperties(FAussStateStaticBuffer& ShadowData) const;
+
+	void CopyProperties(FAussStateStaticBuffer& ShadowData, const FConstAussObjectDataBuffer Source) const;
+
+	void DestructProperties(FAussStateStaticBuffer& InShadowData) const;
+
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
 };
