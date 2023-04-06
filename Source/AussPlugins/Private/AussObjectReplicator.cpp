@@ -1,6 +1,16 @@
 #include "AussObjectReplicator.h"
 #include "Log.h"
 
+
+class FAussSerializeCB
+{
+public:
+	FAussSerializeCB() {};
+
+public:
+
+};
+
 FAussObjectReplicator::FAussObjectReplicator()
 	: ObjectClass(nullptr)
 	, ObjectPtr(nullptr)
@@ -63,4 +73,27 @@ void FAussObjectReplicator::InitRecentProperties(uint8* Source)
 	RepState = LocalRepLayout.CreateRepState(Source);
 
 	// TODO(nkaptx): custom delta property state
+}
+
+bool FAussObjectReplicator::ReplicateProperties(TMap<int32, FString>* properties)
+{
+	UObject* Object = GetObject();
+	if (Object == nullptr)
+	{
+		UE_LOG(LogAussPlugins, Verbose, TEXT("ReplicateProperties: Object == nullptr"));
+		return false;
+	}
+
+	check(RepLayout.IsValid());
+	check(RepState.IsValid());
+	check(RepState->GetSendingState());
+
+	FDataStoreWriter writer(properties);
+	const FConstAussObjectDataBuffer sourceData = Object;
+
+	FAussSendingState* SendingRepState = RepState->GetSendingState();
+	RepLayout->UpdateChangelistMgr(SendingRepState, *ChangelistMgr, Object, 0, false);
+	RepLayout->SendProperties(writer, sourceData);
+
+	return true;
 }

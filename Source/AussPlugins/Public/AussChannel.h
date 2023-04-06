@@ -27,6 +27,8 @@ public:
 	void SetChannelActor(AActor* InActor);
 
 	TSharedPtr<FAussObjectReplicator> CreateReplicatorForNewActorChannel(UObject* Object, FAussLayoutHelper* LayoutHelper);
+
+	int64 ReplicateActor(TMap<int32, FString>* properties);
 public:
 	TSharedPtr<FAussObjectReplicator> ActorReplicator;
 	TMap< UObject*, TSharedRef< FAussObjectReplicator > > ReplicationMap;

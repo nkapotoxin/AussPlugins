@@ -12,6 +12,7 @@ public:
 	void CleanUp();
 	void InitWithObject(UObject* InObject, FAussLayoutHelper* LayoutHelper);
 	void InitRecentProperties(uint8* Source);
+	bool ReplicateProperties(TMap<int32, FString>* properties);
 
 	FORCEINLINE TWeakObjectPtr<UObject>	GetWeakObjectPtr() const
 	{
@@ -30,6 +31,7 @@ public:
 	}
 
 public:
+	TSharedPtr<class FAussChangelistMgr> ChangelistMgr;
 	TSharedPtr<FAussLayout> RepLayout;
 	TUniquePtr<FAussState>  RepState;
 	TUniquePtr<FAussState> CheckpointRepState;

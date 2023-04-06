@@ -411,30 +411,28 @@ void AAussTicker::UpdateLocalPawn()
 void AAussTicker::GetPawnRepData(FString entityId, APawn* pawn, FRepCharacterData* rcd)
 {
 	UAussChannel** channelPtr = allChannels.Find(entityId);
-	if (channelPtr == nullptr)
+	if (channelPtr == nullptr || *channelPtr == nullptr)
 	{
 		// create channel
 		UAussChannel* tmp = NewObject<UAussChannel>();
-
 		FAussLayoutHelper* InRepLayoutHelper = new FAussLayoutHelper();
 
 		// setup
 		tmp->SetLayoutHelper(InRepLayoutHelper);
-
 		tmp->SetChannelActor(pawn->GetPlayerState());
 		allChannels.Add(entityId, tmp);
 
 		channelPtr = &tmp;
 	}
 
-	if (!channelPtr && !*channelPtr)
+	if (channelPtr != nullptr && *channelPtr != nullptr)
 	{
 		UAussChannel* ch = *channelPtr;
-		if (ch->ActorReplicator())
-		{
-
-		}
-
+		ch->ReplicateActor(&rcd->dynamicProperties);
+	}
+	else
+	{
+		UE_LOG(LogAussPlugins, Warning, TEXT("GetPawnRepData with null channel, entityId: %s"), *entityId);
 	}
 
 	//// add magic code here

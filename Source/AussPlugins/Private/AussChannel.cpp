@@ -50,3 +50,14 @@ TSharedPtr<FAussObjectReplicator> UAussChannel::CreateReplicatorForNewActorChann
 	NewReplicator->InitWithObject(Object, LayoutHelper);
 	return NewReplicator;
 }
+
+int64 UAussChannel::ReplicateActor(TMap<int32, FString>* properties)
+{
+	check(Actor);
+	check(RepLayoutHelper);
+	check(ActorReplicator);
+
+	ActorReplicator->ReplicateProperties(properties);
+
+	return 0;
+}

@@ -31,6 +31,26 @@ struct FInitFromPropertyStackParams
 	bool bNetSerializeStructWithObjects = false;
 };
 
+struct FAussComparePropertiesSharedParams
+{
+	const bool bForceFail;
+	const TArray<FAussParentCmd>& Parents;
+	const TArray<FAussLayoutCmd>& Cmds;
+	FAussSendingState* const RepState;
+	FAussChangelistState* const RepChangelistState;
+	const TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>>& NetSerializeLayouts;
+	const bool bValidateProperties = false;
+	const bool bIsNetworkProfilerActive = false;
+	const bool bChangedNetOwner = false;
+};
+
+struct FAussComparePropertiesStackParams
+{
+	const FConstAussObjectDataBuffer Data;
+	FAussShadowDataBuffer ShadowData;
+	TArray<uint16>& Changed;
+};
+
 static FName NAME_Vector_NetQuantize100(TEXT("Vector_NetQuantize100"));
 static FName NAME_Vector_NetQuantize10(TEXT("Vector_NetQuantize10"));
 static FName NAME_Vector_NetQuantizeNormal(TEXT("Vector_NetQuantizeNormal"));
@@ -46,6 +66,310 @@ enum class EAussBuildType
 	Function,
 	Struct
 };
+
+#define ENABLE_PROPERTY_CHECKSUMS
+
+#define USE_CUSTOM_COMPARE
+
+#ifdef USE_CUSTOM_COMPARE
+static FORCEINLINE bool CompareBool(
+	const FAussLayoutCmd& Cmd,
+	const void* A,
+	const void* B)
+{
+	return Cmd.Property->Identical(A, B);
+}
+
+static FORCEINLINE bool CompareObject(
+	const FAussLayoutCmd& Cmd,
+	const void* A,
+	const void* B)
+{
+	FObjectPropertyBase* ObjProperty = CastFieldChecked<FObjectPropertyBase>(Cmd.Property);
+
+	UObject* ObjectA = ObjProperty->GetObjectPropertyValue(A);
+	UObject* ObjectB = ObjProperty->GetObjectPropertyValue(B);
+
+	return ObjectA == ObjectB;
+}
+
+static FORCEINLINE bool CompareSoftObject(
+	const FAussLayoutCmd& Cmd,
+	const void* A,
+	const void* B)
+{
+	return Cmd.Property->Identical(A, B);
+}
+
+static FORCEINLINE bool CompareWeakObject(
+	const FAussLayoutCmd& Cmd,
+	const void* A,
+	const void* B)
+{
+	const FWeakObjectProperty* const WeakObjectProperty = CastFieldChecked<FWeakObjectProperty>(Cmd.Property);
+	const FWeakObjectPtr ObjectA = WeakObjectProperty->GetPropertyValue(A);
+	const FWeakObjectPtr ObjectB = WeakObjectProperty->GetPropertyValue(B);
+
+	return ObjectA.HasSameIndexAndSerialNumber(ObjectB);
+}
+
+static FORCEINLINE bool CompareNetSerializeStructWithObjectProperties(
+	const TArray<FAussLayoutCmd>& Cmds,
+	const TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>>& NetSerializeLayouts,
+	const int32 CmdStart,
+	const int32 CmdEnd,
+	const void* A,
+	const void* B);
+
+template<typename T>
+bool CompareValue(const T* A, const T* B)
+{
+	return *A == *B;
+}
+
+template<typename T>
+bool CompareValue(const void* A, const void* B)
+{
+	return CompareValue((T*)A, (T*)B);
+}
+
+static FORCEINLINE bool PropertiesAreIdenticalNative(
+	const FAussLayoutCmd& Cmd,
+	const void* A,
+	const void* B,
+	const TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>>& NetSerializeLayouts)
+{
+	switch (Cmd.Type)
+	{
+	case EAussLayoutCmdType::PropertyBool:
+		return CompareBool(Cmd, A, B);
+
+	case EAussLayoutCmdType::PropertyNativeBool:
+		return CompareValue<bool>(A, B);
+
+	case EAussLayoutCmdType::PropertyByte:
+		return CompareValue<uint8>(A, B);
+
+	case EAussLayoutCmdType::PropertyFloat:
+		return CompareValue<float>(A, B);
+
+	case EAussLayoutCmdType::PropertyInt:
+		return CompareValue<int32>(A, B);
+
+	case EAussLayoutCmdType::PropertyName:
+		return CompareValue<FName>(A, B);
+
+	case EAussLayoutCmdType::PropertyObject:
+		return CompareObject(Cmd, A, B);
+
+	case EAussLayoutCmdType::PropertySoftObject:
+		return CompareSoftObject(Cmd, A, B);
+
+	case EAussLayoutCmdType::PropertyWeakObject:
+		return CompareWeakObject(Cmd, A, B);
+
+	case EAussLayoutCmdType::PropertyUInt32:
+		return CompareValue<uint32>(A, B);
+
+	case EAussLayoutCmdType::PropertyUInt64:
+		return CompareValue<uint64>(A, B);
+
+	case EAussLayoutCmdType::PropertyVector:
+		return CompareValue<FVector>(A, B);
+
+	case EAussLayoutCmdType::PropertyVector100:
+		return CompareValue<FVector_NetQuantize100>(A, B);
+
+	case EAussLayoutCmdType::PropertyVectorQ:
+		return CompareValue<FVector_NetQuantize>(A, B);
+
+	case EAussLayoutCmdType::PropertyVectorNormal:
+		return CompareValue<FVector_NetQuantizeNormal>(A, B);
+
+	case EAussLayoutCmdType::PropertyVector10:
+		return CompareValue<FVector_NetQuantize10>(A, B);
+
+	case EAussLayoutCmdType::PropertyPlane:
+		return CompareValue<FPlane>(A, B);
+
+	case EAussLayoutCmdType::PropertyRotator:
+		return CompareValue<FRotator>(A, B);
+
+	case EAussLayoutCmdType::PropertyNetId:
+		return CompareValue<FUniqueNetIdRepl>(A, B);
+
+	case EAussLayoutCmdType::RepMovement:
+		return CompareValue<FRepMovement>(A, B);
+
+	case EAussLayoutCmdType::PropertyString:
+		return CompareValue<FString>(A, B);
+
+	case EAussLayoutCmdType::NetSerializeStructWithObjectReferences:
+		return CompareNetSerializeStructWithObjectProperties(NetSerializeLayouts.FindChecked(&Cmd), NetSerializeLayouts, 0, INDEX_NONE, A, B);
+
+	case EAussLayoutCmdType::Property:
+		return Cmd.Property->Identical(A, B);
+
+	default:
+		UE_LOG(LogRep, Fatal, TEXT("PropertiesAreIdentical: Unsupported type! %i (%s)"), (uint8)Cmd.Type, *Cmd.Property->GetName());
+	}
+
+	return false;
+}
+
+static FORCEINLINE bool CompareNetSerializeStructWithObjectProperties(
+	const TArray<FAussLayoutCmd>& Cmds,
+	const TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>>& NetSerializeLayouts,
+	const int32 CmdStart,
+	const int32 CmdEnd,
+	const void* A,
+	const void* B)
+{
+	const int32 RealCmdEnd = (CmdEnd == INDEX_NONE) ? Cmds.Num() : CmdEnd;
+	for (int32 CmdIndex = 0; CmdIndex < RealCmdEnd; ++CmdIndex)
+	{
+		const FAussLayoutCmd& Cmd = Cmds[CmdIndex];
+		check(Cmd.Type != EAussLayoutCmdType::Return);
+
+		// These commands will use an offset from the start of the owning NetSerializeStruct.
+		// So we can avoid the ShadowData / ObjectData stuff here and just use standard offsets.
+		// This will work with packed or unpacked shadow buffers, because net serialize structs
+		// aren't packed.
+
+		if (EAussLayoutCmdType::DynamicArray == Cmd.Type)
+		{
+			FScriptArrayHelper AArray((FArrayProperty*)Cmd.Property, ((const uint8*)A + Cmd.Offset));
+			FScriptArrayHelper BArray((FArrayProperty*)Cmd.Property, ((const uint8*)B + Cmd.Offset));
+
+			if (AArray.Num() == BArray.Num())
+			{
+				for (int32 ArrayIndex = 0; ArrayIndex < AArray.Num(); ++ArrayIndex)
+				{
+					if (!CompareNetSerializeStructWithObjectProperties(Cmds, NetSerializeLayouts, CmdIndex + 1, Cmd.EndCmd - 1, AArray.GetRawPtr(ArrayIndex), BArray.GetRawPtr(ArrayIndex)))
+					{
+						return false;
+					}
+				}
+
+				// The -1 to handle the ++ in the for loop
+				CmdIndex = Cmd.EndCmd - 1;
+			}
+			else
+			{
+				return false;
+			}
+		}
+		else if (!PropertiesAreIdenticalNative(Cmd, (const uint8*)A + Cmd.Offset, (const uint8*)B + Cmd.Offset, NetSerializeLayouts))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static FORCEINLINE bool PropertiesAreIdentical(
+	const FAussLayoutCmd& Cmd,
+	const void* A,
+	const void* B,
+	const TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>>& NetSerializeLayouts)
+{
+	const bool bIsIdentical = PropertiesAreIdenticalNative(Cmd, A, B, NetSerializeLayouts);
+#if 0
+	// Sanity check result
+	if (bIsIdentical != Cmd.Property->Identical(A, B))
+	{
+		UE_LOG(LogRep, Fatal, TEXT("PropertiesAreIdentical: Result mismatch! (%s)"), *Cmd.Property->GetFullName());
+	}
+#endif
+	return bIsIdentical;
+}
+#else
+static FORCEINLINE bool PropertiesAreIdentical(
+	const FAussLayoutCmd& Cmd,
+	const void* A,
+	const void* B,
+	const TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>>& NetSerializeLayouts)
+{
+	return Cmd.Property->Identical(A, B);
+}
+#endif
+
+static FORCEINLINE void StoreProperty(const FAussLayoutCmd& Cmd, void* A, const void* B)
+{
+	Cmd.Property->CopySingleValue(A, B);
+}
+
+static uint16 CompareProperties_r(
+	const FAussComparePropertiesSharedParams& SharedParams,
+	FAussComparePropertiesStackParams& StackParams,
+	const uint16 CmdStart,
+	const uint16 CmdEnd,
+	uint16 Handle)
+{
+	for (int32 CmdIndex = CmdStart; CmdIndex < CmdEnd; ++CmdIndex)
+	{
+		const FAussLayoutCmd& Cmd = SharedParams.Cmds[CmdIndex];
+
+		check(Cmd.Type != EAussLayoutCmdType::Return);
+
+		++Handle;
+
+		const FConstAussObjectDataBuffer Data = StackParams.Data + Cmd;
+		FAussShadowDataBuffer ShadowData = StackParams.ShadowData + Cmd;
+
+		// later to deal with array
+		if (Cmd.Type != EAussLayoutCmdType::DynamicArray)
+		{
+			if (SharedParams.bForceFail || !PropertiesAreIdentical(Cmd, ShadowData.Data, Data.Data, SharedParams.NetSerializeLayouts))
+			{
+				// modify cache
+				StoreProperty(Cmd, ShadowData.Data, Data.Data);
+				StackParams.Changed.Add(Handle);
+			}
+		}
+	}
+
+	return Handle;
+}
+
+static bool CompareParentProperty(
+	const int32 ParentIndex,
+	const FAussComparePropertiesSharedParams& SharedParams,
+	FAussComparePropertiesStackParams& StackParams)
+{
+	const FAussParentCmd& Parent = SharedParams.Parents[ParentIndex];
+	const FAussLayoutCmd& Cmd = SharedParams.Cmds[Parent.CmdStart];
+	const int32 NumChanges = StackParams.Changed.Num();
+
+	CompareProperties_r(SharedParams, StackParams, Parent.CmdStart, Parent.CmdEnd, Cmd.RelativeHandle - 1);
+
+	return !!(StackParams.Changed.Num() - NumChanges);
+}
+
+namespace Auss_RepLayout_Private
+{
+	static bool CompareParentPropertyHelper(
+		const int32 ParentIndex,
+		const FAussComparePropertiesSharedParams& SharedParams,
+		FAussComparePropertiesStackParams& StackParams)
+	{
+		const bool bDidPropertyChange = CompareParentProperty(ParentIndex, SharedParams, StackParams);
+		return bDidPropertyChange;
+	}
+}
+
+static void CompareParentProperties(
+	const FAussComparePropertiesSharedParams& SharedParams,
+	FAussComparePropertiesStackParams& StackParams)
+{
+	check(StackParams.ShadowData);
+
+	for (int32 ParentIndex = 0; ParentIndex < SharedParams.Parents.Num(); ++ParentIndex)
+	{
+		Auss_RepLayout_Private::CompareParentPropertyHelper(ParentIndex, SharedParams, StackParams);
+	}
+}
 
 template<EAussBuildType BuildType>
 static int32 InitFromProperty_r(
@@ -668,6 +992,68 @@ TUniquePtr<FAussState> FAussLayout::CreateRepState(const FConstAussObjectDataBuf
 	return RepState;
 }
 
+
+void FAussLayout::UpdateChangelistMgr(FAussSendingState* RESTRICT RepState,
+	FAussChangelistMgr& InChangelistMgr,
+	const UObject* InObject,
+	const uint32 ReplicationFrame,
+	const bool bForceCompare) const
+{
+	CompareProperties(RepState, &InChangelistMgr.RepChangelistState, (const uint8*)InObject);
+}
+
+void FAussLayout::CompareProperties(
+	FAussSendingState* RESTRICT RepState,
+	FAussChangelistState* RESTRICT RepChangelistState,
+	const FConstAussObjectDataBuffer Data) const
+{
+	if (IsEmpty())
+	{
+		return;
+	}
+
+	RepChangelistState->CompareIndex++;
+
+	check((RepChangelistState->HistoryEnd - RepChangelistState->HistoryStart) < FAussChangelistState::MAX_CHANGE_HISTORY);
+	const int32 HistoryIndex = RepChangelistState->HistoryEnd % FAussChangelistState::MAX_CHANGE_HISTORY;
+	FAussChangedHistory& NewHistoryItem = RepChangelistState->ChangeHistory[HistoryIndex];
+
+	TArray<uint16>& Changed = NewHistoryItem.Changed;
+	Changed.Empty(1);
+
+	// TODO(nkpatx): add push model optimize here
+	const TBitArray<>* const LocalPushModelProperties = nullptr;
+
+	FAussComparePropertiesSharedParams SharedParams{
+		/*bForceFail=*/ false,
+		Parents,
+		Cmds,
+		RepState,
+		RepChangelistState,
+		NetSerializeLayouts,
+	};
+
+	FAussComparePropertiesStackParams StackParams{
+		Data,
+		RepChangelistState->StaticBuffer.GetData(),
+		Changed,
+	};
+
+	CompareParentProperties(SharedParams, StackParams);
+
+	if (Changed.Num() == 0)
+	{
+		return;
+	}
+
+	Changed.Add(0);
+
+	RepChangelistState->HistoryEnd++;
+	RepChangelistState->SharedSerialization.Reset();
+
+	// update change history
+	return;
+}
 
 FAussStateStaticBuffer::~FAussStateStaticBuffer()
 {

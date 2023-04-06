@@ -258,6 +258,63 @@ private:
 	TSharedRef<const FAussLayout> Layout;
 };
 
+struct FAussSharedPropertyKey
+{
+private:
+	uint32 CmdIndex = 0;
+	uint32 ArrayIndex = 0;
+	uint32 ArrayDepth = 0;
+	void* DataPtr = nullptr;
+
+public:
+	FAussSharedPropertyKey()
+		: CmdIndex(0)
+		, ArrayIndex(0)
+		, ArrayDepth(0)
+		, DataPtr(nullptr)
+	{
+	}
+
+	explicit FAussSharedPropertyKey(uint32 InCmdIndex, uint32 InArrayIndex, uint32 InArrayDepth, void* InDataPtr)
+		: CmdIndex(InCmdIndex)
+		, ArrayIndex(InArrayIndex)
+		, ArrayDepth(InArrayDepth)
+		, DataPtr(InDataPtr)
+	{
+	}
+
+	FString ToDebugString() const
+	{
+		return FString::Printf(TEXT("{Cmd: %u, Index: %u, Depth: %u, Ptr: %x}"), CmdIndex, ArrayIndex, ArrayDepth, DataPtr);
+	}
+
+	friend bool operator==(const FAussSharedPropertyKey& A, const FAussSharedPropertyKey& B)
+	{
+		return (A.CmdIndex == B.CmdIndex) && (A.ArrayIndex == B.ArrayIndex) && (A.ArrayDepth == B.ArrayDepth) && (A.DataPtr == B.DataPtr);
+	}
+
+	friend uint32 GetTypeHash(const FAussSharedPropertyKey& Key)
+	{
+		return uint32(CityHash64((char*)&Key, sizeof(FAussSharedPropertyKey)));
+	}
+};
+
+struct FAussSerializedPropertyInfo
+{
+	FAussSerializedPropertyInfo() :
+		BitOffset(0),
+		BitLength(0),
+		PropBitOffset(0),
+		PropBitLength(0)
+	{}
+
+	FAussSharedPropertyKey PropertyKey;
+	int32 BitOffset;
+	int32 BitLength;
+	int32 PropBitOffset;
+	int32 PropBitLength;
+};
+
 class FAussReceivingState : public FNoncopyable
 {
 private:
@@ -287,6 +344,93 @@ public:
 	FAussChangedHistory ChangeHistory[MAX_CHANGE_HISTORY];
 	TArray<uint16> LifetimeChangelist;
 	TArray<uint16> InactiveChangelist;
+};
+
+struct FAussSerializationSharedInfo
+{
+	FAussSerializationSharedInfo() :
+		SerializedProperties(MakeUnique<FNetBitWriter>(0)),
+		bIsValid(false)
+	{}
+
+	void SetValid()
+	{
+		bIsValid = true;
+	}
+
+	bool IsValid() const
+	{
+		return bIsValid;
+	}
+
+	void Reset()
+	{
+		if (bIsValid)
+		{
+			SharedPropertyInfo.Reset();
+			SerializedProperties->Reset();
+
+			bIsValid = false;
+		}
+	}
+
+	TArray<FAussSerializedPropertyInfo> SharedPropertyInfo;
+	TUniquePtr<FNetBitWriter> SerializedProperties;
+
+private:
+	bool bIsValid;
+};
+
+class FAussChangelistState : public FNoncopyable
+{
+private:
+
+	friend class FAussChangelistMgr;
+
+	FAussChangelistState(
+		const TSharedRef<const FAussLayout>& InRepLayout,
+		const uint8* Source,
+		const UObject* InRepresenting);
+
+public:
+
+	~FAussChangelistState() {};
+
+	static const int32 MAX_CHANGE_HISTORY = 64;
+	FAussChangedHistory ChangeHistory[MAX_CHANGE_HISTORY];
+	int32 HistoryStart;
+	int32 HistoryEnd;
+	int32 CompareIndex;
+	FAussStateStaticBuffer StaticBuffer;
+	FAussSerializationSharedInfo SharedSerialization;
+};
+
+class FAussChangelistMgr : public FNoncopyable
+{
+private:
+
+	friend class FAussLayout;
+
+	FAussChangelistMgr(
+		const TSharedRef<const FAussLayout>& InRepLayout,
+		const uint8* Source,
+		const UObject* InRepresenting);
+
+public:
+
+	~FAussChangelistMgr() {};
+
+	FAussChangelistState* GetRepChangelistState() const
+	{
+		return const_cast<FAussChangelistState*>(&RepChangelistState);
+	}
+
+private:
+
+	uint32 LastReplicationFrame;
+	uint32 LastInitialReplicationFrame;
+
+	FAussChangelistState RepChangelistState;
 };
 
 class FAussState : public FNoncopyable
@@ -357,23 +501,47 @@ public:
 
 	UStruct* Owner;
 
+	TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>> NetSerializeLayouts;
+
 	static TSharedPtr<FAussLayout> CreateFromClass(UClass* InObjectClass);
 
 	void InitFromClass(UClass* InObjectClass);
 
-	void SendProperties(FDataStoreWriter& Ar, const FConstAussObjectDataBuffer SourceData) const;
+	void SendProperties(FDataStoreWriter& Ar, 
+		const FConstAussObjectDataBuffer SourceData) const;
 
-	void ReceiveProperties(FDataStoreReader& Ar, const FConstAussObjectDataBuffer SourceData) const;
+	void ReceiveProperties(FDataStoreReader& Ar, 
+		const FConstAussObjectDataBuffer SourceData) const;
+
+	void CompareProperties(
+		FAussSendingState* RESTRICT RepState,
+		FAussChangelistState* RESTRICT RepChangelistState,
+		const FConstAussObjectDataBuffer Data) const;
 
 	TUniquePtr<FAussState> CreateRepState(const FConstAussObjectDataBuffer Source) const;
 
-	void InitRepStateStaticBuffer(FAussStateStaticBuffer& ShadowData, const FConstAussObjectDataBuffer Source) const;
+	void InitRepStateStaticBuffer(FAussStateStaticBuffer& ShadowData, 
+		const FConstAussObjectDataBuffer Source) const;
 
 	void ConstructProperties(FAussStateStaticBuffer& ShadowData) const;
 
-	void CopyProperties(FAussStateStaticBuffer& ShadowData, const FConstAussObjectDataBuffer Source) const;
+	void CopyProperties(FAussStateStaticBuffer& ShadowData, 
+		const FConstAussObjectDataBuffer Source) const;
 
 	void DestructProperties(FAussStateStaticBuffer& InShadowData) const;
 
+	void UpdateChangelistMgr(FAussSendingState* RESTRICT RepState,
+		FAussChangelistMgr& InChangelistMgr,
+		const UObject* InObject,
+		const uint32 ReplicationFrame,
+		const bool bForceCompare) const;
+
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
+
+public:
+
+	const bool IsEmpty() const
+	{
+		return 0 == Parents.Num();
+	}
 };
