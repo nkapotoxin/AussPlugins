@@ -231,11 +231,6 @@ static FORCEINLINE bool CompareNetSerializeStructWithObjectProperties(
 		const FAussLayoutCmd& Cmd = Cmds[CmdIndex];
 		check(Cmd.Type != EAussLayoutCmdType::Return);
 
-		// These commands will use an offset from the start of the owning NetSerializeStruct.
-		// So we can avoid the ShadowData / ObjectData stuff here and just use standard offsets.
-		// This will work with packed or unpacked shadow buffers, because net serialize structs
-		// aren't packed.
-
 		if (EAussLayoutCmdType::DynamicArray == Cmd.Type)
 		{
 			FScriptArrayHelper AArray((FArrayProperty*)Cmd.Property, ((const uint8*)A + Cmd.Offset));
@@ -300,6 +295,19 @@ static FORCEINLINE void StoreProperty(const FAussLayoutCmd& Cmd, void* A, const 
 	Cmd.Property->CopySingleValue(A, B);
 }
 
+
+template<EAussBuildType BuildType>
+static FORCEINLINE const int32 GetOffsetForProperty(const FProperty& Property)
+{
+	return Property.GetOffset_ForGC();
+}
+
+template<>
+const FORCEINLINE int32 GetOffsetForProperty<EAussBuildType::Function>(const FProperty& Property)
+{
+	return Property.GetOffset_ForUFunction();
+}
+
 static uint16 CompareProperties_r(
 	const FAussComparePropertiesSharedParams& SharedParams,
 	FAussComparePropertiesStackParams& StackParams,
@@ -310,6 +318,11 @@ static uint16 CompareProperties_r(
 	for (int32 CmdIndex = CmdStart; CmdIndex < CmdEnd; ++CmdIndex)
 	{
 		const FAussLayoutCmd& Cmd = SharedParams.Cmds[CmdIndex];
+
+		if (Cmd.Property->GetName() == "ping")
+		{
+			continue;
+		}
 
 		check(Cmd.Type != EAussLayoutCmdType::Return);
 
@@ -375,6 +388,163 @@ template<EAussBuildType BuildType>
 static int32 InitFromProperty_r(
 	FInitFromPropertySharedParams& SharedParams,
 	FInitFromPropertyStackParams StackParams);
+
+template<bool bAlreadyAligned>
+static void BuildShadowOffsets_r(TArray<FAussLayoutCmd>::TIterator& CmdIt, int32& ShadowOffset)
+{
+	check(CmdIt);
+	check(EAussLayoutCmdType::Return != CmdIt->Type);
+
+	if (CmdIt->Type == EAussLayoutCmdType::DynamicArray || EnumHasAnyFlags(CmdIt->Flags, EAussLayoutCmdFlags::IsStruct))
+	{
+		if (!bAlreadyAligned)
+		{
+			// Note, we can't use the Commands reported element size, as Array Commands
+			// will have that set to their inner property size.
+
+			ShadowOffset = Align(ShadowOffset, CmdIt->Property->GetMinAlignment());
+			CmdIt->ShadowOffset = ShadowOffset;
+			ShadowOffset += CmdIt->Property->GetSize();
+		}
+
+		if (CmdIt->Type == EAussLayoutCmdType::DynamicArray)
+		{
+			// Iterator into the array's layout.
+			++CmdIt;
+
+			for (; EAussLayoutCmdType::Return != CmdIt->Type; ++CmdIt)
+			{
+				CmdIt->ShadowOffset = CmdIt->Offset;
+				BuildShadowOffsets_r</*bAlreadyAligned=*/true>(CmdIt, CmdIt->ShadowOffset);
+			}
+
+			check(CmdIt);
+		}
+	}
+	else if (!bAlreadyAligned)
+	{
+		// This property is already aligned, and ShadowOffset should be correct and managed elsewhere.
+		if (ShadowOffset > 0)
+		{
+			// Bools may be packed as bitfields, and if so they can be stored in the same location
+			// as a previous property.
+			if (EAussLayoutCmdType::PropertyBool == CmdIt->Type && CmdIt.GetIndex() > 0)
+			{
+				const TArray<FAussLayoutCmd>::TIterator PrevCmdIt = CmdIt - 1;
+				if (EAussLayoutCmdType::PropertyBool == PrevCmdIt->Type && PrevCmdIt->Offset == CmdIt->Offset)
+				{
+					ShadowOffset = PrevCmdIt->ShadowOffset;
+				}
+			}
+			else
+			{
+				ShadowOffset = Align(ShadowOffset, CmdIt->Property->GetMinAlignment());
+			}
+		}
+
+		CmdIt->ShadowOffset = ShadowOffset;
+		ShadowOffset += CmdIt->ElementSize;
+	}
+}
+
+template<EAussBuildType ShadowType>
+static void BuildShadowOffsets(
+	UStruct* Owner,
+	TArray<FAussParentCmd>& Parents,
+	TArray<FAussLayoutCmd>& Cmds,
+	int32& ShadowOffset)
+{
+	if (ShadowType == EAussBuildType::Class)
+	{
+		ShadowOffset = 0;
+		if (0 != Parents.Num())
+		{
+			// we'll sort the Parent Commands by alignment. It should generally improve cache hit rate when iterating over commands.
+			struct FAussParentCmdIndexAndAlignment
+			{
+				FAussParentCmdIndexAndAlignment(int32 ParentIndex, const FAussParentCmd& Parent) :
+					Index(ParentIndex),
+					Alignment(Parent.Property->GetMinAlignment())
+				{
+				}
+
+				const int32 Index;
+				const int32 Alignment;
+
+				// Needed for sorting.
+				bool operator< (const FAussParentCmdIndexAndAlignment& RHS) const
+				{
+					return Alignment < RHS.Alignment;
+				}
+			};
+
+			TArray<FAussParentCmdIndexAndAlignment> IndexAndAlignmentArray;
+			IndexAndAlignmentArray.Reserve(Parents.Num());
+			for (int32 i = 0; i < Parents.Num(); ++i)
+			{
+				IndexAndAlignmentArray.Emplace(i, Parents[i]);
+			}
+
+			IndexAndAlignmentArray.StableSort();
+			for (int32 i = 0; i < IndexAndAlignmentArray.Num(); ++i)
+			{
+				const FAussParentCmdIndexAndAlignment& IndexAndAlignment = IndexAndAlignmentArray[i];
+				FAussParentCmd& Parent = Parents[IndexAndAlignment.Index];
+
+				if (Parent.Property->ArrayDim > 1 || EnumHasAnyFlags(Parent.Flags, EAussParentFlags::IsStructProperty))
+				{
+					const int32 ArrayStartParentOffset = GetOffsetForProperty<ShadowType>(*Parent.Property);
+					ShadowOffset = Align(ShadowOffset, IndexAndAlignment.Alignment);
+
+					for (int32 j = 0; j < Parent.Property->ArrayDim; ++j, ++i)
+					{
+						const FAussParentCmdIndexAndAlignment& NextIndexAndAlignment = IndexAndAlignmentArray[i];
+						FAussParentCmd& NextParent = Parents[NextIndexAndAlignment.Index];
+
+						NextParent.ShadowOffset = ShadowOffset + (GetOffsetForProperty<ShadowType>(*NextParent.Property) - ArrayStartParentOffset);
+
+						for (auto CmdIt = Cmds.CreateIterator() + NextParent.CmdStart; CmdIt.GetIndex() < NextParent.CmdEnd; ++CmdIt)
+						{
+							CmdIt->ShadowOffset = ShadowOffset + (CmdIt->Offset - ArrayStartParentOffset);
+							BuildShadowOffsets_r</*bAlreadyAligned*/true>(CmdIt, CmdIt->ShadowOffset);
+						}
+					}
+
+					--i;
+					ShadowOffset += Parent.Property->GetSize();
+				}
+				else
+				{
+					check(Parent.CmdEnd > Parent.CmdStart);
+
+					for (auto CmdIt = Cmds.CreateIterator() + Parent.CmdStart; CmdIt.GetIndex() < Parent.CmdEnd; ++CmdIt)
+					{
+						BuildShadowOffsets_r</*bAlreadyAligned=*/false>(CmdIt, ShadowOffset);
+					}
+
+					// We update this after we build child commands offsets, to make sure that
+					// if there's any extra packing (like bitfield packing), we are aware of it.
+					Parent.ShadowOffset = Cmds[Parent.CmdStart].ShadowOffset;
+				}
+			}
+		}
+	}
+	else
+	{
+		ShadowOffset = Owner->GetPropertiesSize();
+
+		for (auto ParentIt = Parents.CreateIterator(); ParentIt; ++ParentIt)
+		{
+			ParentIt->ShadowOffset = GetOffsetForProperty<ShadowType>(*ParentIt->Property);
+		}
+
+		for (auto CmdIt = Cmds.CreateIterator(); CmdIt; ++CmdIt)
+		{
+			CmdIt->ShadowOffset = CmdIt->Offset;
+		}
+	}
+}
+
 
 TSharedPtr<FAussLayout> FAussLayout::CreateFromClass(UClass* InClass)
 {
@@ -452,18 +622,6 @@ static int32 InitFromStructProperty(
 	}
 
 	return StackParams.RelativeHandle;
-}
-
-template<EAussBuildType BuildType>
-static FORCEINLINE const int32 GetOffsetForProperty(const FProperty& Property)
-{
-	return Property.GetOffset_ForGC();
-}
-
-template<>
-const FORCEINLINE int32 GetOffsetForProperty<EAussBuildType::Function>(const FProperty& Property)
-{
-	return Property.GetOffset_ForUFunction();
 }
 
 static uint32 GetLayoutCmdCompatibleChecksum(
@@ -823,63 +981,424 @@ void FAussLayout::InitFromClass(UClass* InObjectClass)
 	}
 
 	AddReturnCmd(Cmds);
+
+	BuildHandleToCmdIndexTable_r(0, Cmds.Num() - 1, BaseHandleToCmdIndex);
+
+	BuildShadowOffsets<EAussBuildType::Class>(InObjectClass, Parents, Cmds, ShadowDataBufferSize);
+
 	Owner = InObjectClass;
 }
 
-void FAussLayout::SendProperties(FDataStoreWriter& Ar, const FConstAussObjectDataBuffer SourceData) const
+void FAussLayout::BuildHandleToCmdIndexTable_r(
+	const int32 CmdStart,
+	const int32 CmdEnd,
+	TArray<FAussHandleToCmdIndex>& HandleToCmdIndex)
 {
-	for (int32 i = 0; i < Cmds.Num(); i++)
+	for (int32 CmdIndex = CmdStart; CmdIndex < CmdEnd; CmdIndex++)
 	{
-		const FAussLayoutCmd& Cmd = Cmds[i];
-		const FAussParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
-		if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
+		const FAussLayoutCmd& Cmd = Cmds[CmdIndex];
+
+		check(Cmd.Type != EAussLayoutCmdType::Return);
+
+		const int32 Index = HandleToCmdIndex.Add(FAussHandleToCmdIndex(CmdIndex));
+
+		if (Cmd.Type == EAussLayoutCmdType::DynamicArray)
 		{
-			// Auss no need to replicate these internal properties
-			const FString propertyName = ParentCmd.Property->GetName();
-			if (propertyName == "bReplicateMovement" ||
-				propertyName == "bHidden" ||
-				propertyName == "bTearOff" ||
-				propertyName == "bCanBeDamaged" ||
-				propertyName == "RemoteRole" ||
-				propertyName == "ReplicatedMovement" ||
-				propertyName == "AttachmentReplication" ||
-				propertyName == "Owner" ||
-				propertyName == "Role" ||
-				propertyName == "Instigator" ||
-				propertyName == "bIsSpectator" ||
-				propertyName == "bOnlySpectator" ||
-				propertyName == "bIsABot" ||
-				propertyName == "bIsInactive" ||
-				propertyName == "bFromPreviousLevel" ||
-				propertyName == "StartTime" ||
-				propertyName == "UniqueId")
+			HandleToCmdIndex[Index].HandleToCmdIndex = TUniquePtr<TArray<FAussHandleToCmdIndex>>(new TArray<FAussHandleToCmdIndex>());
+
+			TArray<FAussHandleToCmdIndex>& ArrayHandleToCmdIndex = *HandleToCmdIndex[Index].HandleToCmdIndex;
+
+			BuildHandleToCmdIndexTable_r(CmdIndex + 1, Cmd.EndCmd - 1, ArrayHandleToCmdIndex);
+			CmdIndex = Cmd.EndCmd - 1;		// The -1 to handle the ++ in the for loop
+		}
+	}
+}
+
+void FAussLayout::MergeChangeList(
+	const FConstAussObjectDataBuffer Data,
+	const TArray<uint16>& Dirty1,
+	const TArray<uint16>& Dirty2,
+	TArray<uint16>& MergedDirty) const
+{
+	check(Dirty1.Num() > 0);
+	MergedDirty.Empty(1);
+
+	if (!IsEmpty())
+	{
+		if (Dirty2.Num() == 0)
+		{
+			FAussChangelistIterator ChangelistIterator(Dirty1, 0);
+			FAussHandleIterator HandleIterator(Owner, ChangelistIterator, Cmds, BaseHandleToCmdIndex, 0, 1, 0, Cmds.Num() - 1);
+			PruneChangeList_r(HandleIterator, Data, MergedDirty);
+		}
+		else
+		{
+			FAussChangelistIterator ChangelistIterator1(Dirty1, 0);
+			FAussHandleIterator HandleIterator1(Owner, ChangelistIterator1, Cmds, BaseHandleToCmdIndex, 0, 1, 0, Cmds.Num() - 1);
+
+			FAussChangelistIterator ChangelistIterator2(Dirty2, 0);
+			FAussHandleIterator HandleIterator2(Owner, ChangelistIterator2, Cmds, BaseHandleToCmdIndex, 0, 1, 0, Cmds.Num() - 1);
+
+			MergeChangeList_r(HandleIterator1, HandleIterator2, Data, MergedDirty);
+		}
+	}
+
+	MergedDirty.Add(0);
+}
+
+class FAussScopedIteratorArrayTracker
+{
+public:
+	FAussScopedIteratorArrayTracker(FAussHandleIterator* InCmdIndexIterator)
+	{
+		CmdIndexIterator = InCmdIndexIterator;
+
+		if (CmdIndexIterator)
+		{
+			ArrayChangedCount = CmdIndexIterator->ChangelistIterator.Changed[CmdIndexIterator->ChangelistIterator.ChangedIndex++];
+			OldChangedIndex = CmdIndexIterator->ChangelistIterator.ChangedIndex;
+		}
+	}
+
+	~FAussScopedIteratorArrayTracker()
+	{
+		if (CmdIndexIterator)
+		{
+			check(CmdIndexIterator->ChangelistIterator.ChangedIndex - OldChangedIndex <= ArrayChangedCount);
+			CmdIndexIterator->ChangelistIterator.ChangedIndex = OldChangedIndex + ArrayChangedCount;
+			check(CmdIndexIterator->PeekNextHandle() == 0);
+			CmdIndexIterator->ChangelistIterator.ChangedIndex++;
+		}
+	}
+
+	FAussHandleIterator* CmdIndexIterator;
+	int32 ArrayChangedCount;
+	int32 OldChangedIndex;
+};
+
+void FAussLayout::MergeChangeList_r(
+	FAussHandleIterator& RepHandleIterator1,
+	FAussHandleIterator& RepHandleIterator2,
+	const FConstAussObjectDataBuffer SourceData,
+	TArray<uint16>& OutChanged) const
+{
+	while (true)
+	{
+		const int32 NextHandle1 = RepHandleIterator1.PeekNextHandle();
+		const int32 NextHandle2 = RepHandleIterator2.PeekNextHandle();
+
+		if (NextHandle1 == 0 && NextHandle2 == 0)
+		{
+			// Done
+			break;
+		}
+
+		if (NextHandle2 == 0)
+		{
+			PruneChangeList_r(RepHandleIterator1, SourceData, OutChanged);
+			return;
+		}
+		else if (NextHandle1 == 0)
+		{
+			PruneChangeList_r(RepHandleIterator2, SourceData, OutChanged);
+			return;
+		}
+
+		FAussHandleIterator* ActiveIterator1 = nullptr;
+		FAussHandleIterator* ActiveIterator2 = nullptr;
+
+		int32 CmdIndex = INDEX_NONE;
+		int32 ArrayOffset = INDEX_NONE;
+
+		if (NextHandle1 < NextHandle2)
+		{
+			if (!RepHandleIterator1.NextHandle())
 			{
-				UE_LOG(LogAussPlugins, Log, TEXT("SendProperties scape internal property name: %s"), *propertyName);
-				continue;
+				// Array overflow
+				break;
 			}
 
-			const FConstAussObjectDataBuffer Data = (SourceData + Cmd);
-			if (Cmd.Type == EAussLayoutCmdType::PropertyString)
+			OutChanged.Add(NextHandle1);
+
+			CmdIndex = RepHandleIterator1.CmdIndex;
+			ArrayOffset = RepHandleIterator1.ArrayOffset;
+
+			ActiveIterator1 = &RepHandleIterator1;
+		}
+		else if (NextHandle2 < NextHandle1)
+		{
+			if (!RepHandleIterator2.NextHandle())
 			{
-				Ar.Serialize((const FString*)Data.Data, i);
+				// Array overflow
+				break;
 			}
-			else if (Cmd.Type == EAussLayoutCmdType::PropertyInt)
+
+			OutChanged.Add(NextHandle2);
+
+			CmdIndex = RepHandleIterator2.CmdIndex;
+			ArrayOffset = RepHandleIterator2.ArrayOffset;
+
+			ActiveIterator2 = &RepHandleIterator2;
+		}
+		else
+		{
+			check(NextHandle1 == NextHandle2);
+
+			if (!RepHandleIterator1.NextHandle())
 			{
-				const FString tmp = FString::FromInt(*(const int32*)Data.Data);
-				Ar.Serialize(&tmp, i);
+				// Array overflow
+				break;
 			}
-			else if (Cmd.Type == EAussLayoutCmdType::PropertyFloat)
+
+			if (!ensure(RepHandleIterator2.NextHandle()))
 			{
-				// TODO(nkpatx): jindu optimize
-				const FString tmp = FString::SanitizeFloat(*(const float*)Data.Data);
-				Ar.Serialize(&tmp, i);
+				// Array overflow
+				break;
+			}
+
+			check(RepHandleIterator1.CmdIndex == RepHandleIterator2.CmdIndex);
+
+			OutChanged.Add(NextHandle1);
+
+			CmdIndex = RepHandleIterator1.CmdIndex;
+			ArrayOffset = RepHandleIterator1.ArrayOffset;
+
+			ActiveIterator1 = &RepHandleIterator1;
+			ActiveIterator2 = &RepHandleIterator2;
+		}
+
+		const FAussLayoutCmd& Cmd = Cmds[CmdIndex];
+
+		if (Cmd.Type == EAussLayoutCmdType::DynamicArray)
+		{
+			const FConstAussObjectDataBuffer Data = (SourceData + Cmd) + ArrayOffset;
+			const FScriptArray* Array = (FScriptArray*)Data.Data;
+			const FConstAussObjectDataBuffer ArrayData(Array->GetData());
+
+			FAussScopedIteratorArrayTracker ArrayTracker1(ActiveIterator1);
+			FAussScopedIteratorArrayTracker ArrayTracker2(ActiveIterator2);
+
+			const int32 OriginalChangedNum = OutChanged.AddUninitialized();
+
+			TArray<FAussHandleToCmdIndex>& ArrayHandleToCmdIndex = ActiveIterator1 ? *ActiveIterator1->HandleToCmdIndex[Cmd.RelativeHandle - 1].HandleToCmdIndex : *ActiveIterator2->HandleToCmdIndex[Cmd.RelativeHandle - 1].HandleToCmdIndex; //-V595
+
+			if (!ActiveIterator1)
+			{
+				FAussHandleIterator ArrayIterator2(ActiveIterator2->Owner, ActiveIterator2->ChangelistIterator, Cmds, ArrayHandleToCmdIndex, Cmd.ElementSize, Array->Num(), CmdIndex + 1, Cmd.EndCmd - 1);
+				PruneChangeList_r(ArrayIterator2, ArrayData, OutChanged);
+			}
+			else if (!ActiveIterator2)
+			{
+				FAussHandleIterator ArrayIterator1(ActiveIterator1->Owner, ActiveIterator1->ChangelistIterator, Cmds, ArrayHandleToCmdIndex, Cmd.ElementSize, Array->Num(), CmdIndex + 1, Cmd.EndCmd - 1);
+				PruneChangeList_r(ArrayIterator1, ArrayData, OutChanged);
 			}
 			else
 			{
-				UE_LOG(LogAussPlugins, Warning, TEXT("SendProperties with not supported property name: %s, type: %d"), *propertyName, Cmd.Type);
+				FAussHandleIterator ArrayIterator1(ActiveIterator1->Owner, ActiveIterator1->ChangelistIterator, Cmds, ArrayHandleToCmdIndex, Cmd.ElementSize, Array->Num(), CmdIndex + 1, Cmd.EndCmd - 1);
+				FAussHandleIterator ArrayIterator2(ActiveIterator2->Owner, ActiveIterator2->ChangelistIterator, Cmds, ArrayHandleToCmdIndex, Cmd.ElementSize, Array->Num(), CmdIndex + 1, Cmd.EndCmd - 1);
+
+				MergeChangeList_r(ArrayIterator1, ArrayIterator2, ArrayData, OutChanged);
+			}
+
+			// Patch in the jump offset
+			OutChanged[OriginalChangedNum] = OutChanged.Num() - (OriginalChangedNum + 1);
+
+			// Add the array terminator
+			OutChanged.Add(0);
+		}
+	}
+}
+
+void FAussLayout::PruneChangeList_r(
+	FAussHandleIterator& RepHandleIterator,
+	const FConstAussObjectDataBuffer SourceData,
+	TArray<uint16>& OutChanged) const
+{
+	while (RepHandleIterator.NextHandle())
+	{
+		OutChanged.Add(RepHandleIterator.Handle);
+
+		const int32 CmdIndex = RepHandleIterator.CmdIndex;
+		const int32 ArrayOffset = RepHandleIterator.ArrayOffset;
+
+		const FAussLayoutCmd& Cmd = Cmds[CmdIndex];
+
+		if (Cmd.Type == EAussLayoutCmdType::DynamicArray)
+		{
+			const FConstAussObjectDataBuffer Data = (SourceData + Cmd) + ArrayOffset;
+			const FScriptArray* Array = (FScriptArray*)Data.Data;
+			const FConstAussObjectDataBuffer ArrayData(Array->GetData());
+
+			FAussScopedIteratorArrayTracker ArrayTracker(&RepHandleIterator);
+
+			const int32 OriginalChangedNum = OutChanged.AddUninitialized();
+
+			TArray<FAussHandleToCmdIndex>& ArrayHandleToCmdIndex = *RepHandleIterator.HandleToCmdIndex[Cmd.RelativeHandle - 1].HandleToCmdIndex;
+
+			FAussHandleIterator ArrayIterator(RepHandleIterator.Owner, RepHandleIterator.ChangelistIterator, Cmds, ArrayHandleToCmdIndex, Cmd.ElementSize, Array->Num(), CmdIndex + 1, Cmd.EndCmd - 1);
+			PruneChangeList_r(ArrayIterator, ArrayData, OutChanged);
+
+			// Patch in the jump offset
+			OutChanged[OriginalChangedNum] = OutChanged.Num() - (OriginalChangedNum + 1);
+
+			// Add the array terminator
+			OutChanged.Add(0);
+		}
+	}
+}
+
+void FAussLayout::SendProperties_r(
+	FAussSendingState* RESTRICT RepState,
+	FDataStoreWriter& Ar,
+	FAussHandleIterator& HandleIterator,
+	const FConstAussObjectDataBuffer SourceData,
+	const int32	ArrayDepth,
+	const bool ForceSend) const
+{
+	if (ForceSend)
+	{
+		// Force send all properties
+		for (int32 i = 0; i < Cmds.Num(); i++)
+		{
+			const FAussLayoutCmd& Cmd = Cmds[i];
+			const FAussParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
+			if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
+			{
+				// Auss no need to replicate these internal properties
+				const FString propertyName = ParentCmd.Property->GetName();
+				if (propertyName == "bReplicateMovement" ||
+					propertyName == "bHidden" ||
+					propertyName == "bTearOff" ||
+					propertyName == "bCanBeDamaged" ||
+					propertyName == "RemoteRole" ||
+					propertyName == "ReplicatedMovement" ||
+					propertyName == "AttachmentReplication" ||
+					propertyName == "Owner" ||
+					propertyName == "Role" ||
+					propertyName == "Instigator" ||
+					propertyName == "bIsSpectator" ||
+					propertyName == "bOnlySpectator" ||
+					propertyName == "bIsABot" ||
+					propertyName == "bIsInactive" ||
+					propertyName == "bFromPreviousLevel" ||
+					propertyName == "StartTime" ||
+					propertyName == "UniqueId")
+				{
+					UE_LOG(LogAussPlugins, Log, TEXT("SendProperties scape internal property name: %s"), *propertyName);
+					continue;
+				}
+
+				const FConstAussObjectDataBuffer Data = (SourceData + Cmd);
+				if (Cmd.Type == EAussLayoutCmdType::PropertyString)
+				{
+					Ar.Serialize((const FString*)Data.Data, i);
+				}
+				else if (Cmd.Type == EAussLayoutCmdType::PropertyInt)
+				{
+					const FString tmp = FString::FromInt(*(const int32*)Data.Data);
+					Ar.Serialize(&tmp, i);
+				}
+				else if (Cmd.Type == EAussLayoutCmdType::PropertyFloat)
+				{
+					// TODO(nkpatx): jindu optimize
+					const FString tmp = FString::SanitizeFloat(*(const float*)Data.Data);
+					Ar.Serialize(&tmp, i);
+				}
+				else
+				{
+					UE_LOG(LogAussPlugins, Warning, TEXT("SendProperties with not supported property name: %s, type: %d"), *propertyName, Cmd.Type);
+				}
 			}
 		}
 	}
+	else
+	{
+		while (HandleIterator.NextHandle())
+		{
+			const FAussLayoutCmd& Cmd = Cmds[HandleIterator.CmdIndex];
+			const FAussParentCmd& ParentCmd = Parents[Cmd.ParentIndex];
+
+			UE_LOG(LogAussPlugins, VeryVerbose, TEXT("SendProperties_r: Parent=%d, Cmd=%d, ArrayIndex=%d"), Cmd.ParentIndex, HandleIterator.CmdIndex, HandleIterator.ArrayIndex);
+
+			FConstAussObjectDataBuffer Data = (SourceData + Cmd) + HandleIterator.ArrayOffset;
+
+			if (Cmd.Type == EAussLayoutCmdType::DynamicArray)
+			{
+				// TODO(nkaptx): Add array later
+			}
+
+			if (Cmd.Property != nullptr && ParentCmd.Property != nullptr)
+			{
+				// Auss no need to replicate these internal properties
+				const FString propertyName = ParentCmd.Property->GetName();
+				if (propertyName == "bReplicateMovement" ||
+					propertyName == "bHidden" ||
+					propertyName == "bTearOff" ||
+					propertyName == "bCanBeDamaged" ||
+					propertyName == "RemoteRole" ||
+					propertyName == "ReplicatedMovement" ||
+					propertyName == "AttachmentReplication" ||
+					propertyName == "Owner" ||
+					propertyName == "Role" ||
+					propertyName == "Instigator" ||
+					propertyName == "bIsSpectator" ||
+					propertyName == "bOnlySpectator" ||
+					propertyName == "bIsABot" ||
+					propertyName == "bIsInactive" ||
+					propertyName == "bFromPreviousLevel" ||
+					propertyName == "StartTime" ||
+					propertyName == "UniqueId")
+				{
+					UE_LOG(LogAussPlugins, Log, TEXT("SendProperties scape internal property name: %s"), *propertyName);
+					continue;
+				}
+
+				if (Cmd.Type == EAussLayoutCmdType::PropertyString)
+				{
+					Ar.Serialize((const FString*)Data.Data, HandleIterator.CmdIndex);
+				}
+				else if (Cmd.Type == EAussLayoutCmdType::PropertyInt)
+				{
+					const FString tmp = FString::FromInt(*(const int32*)Data.Data);
+					Ar.Serialize(&tmp, HandleIterator.CmdIndex);
+				}
+				else if (Cmd.Type == EAussLayoutCmdType::PropertyFloat)
+				{
+					// TODO(nkpatx): jindu optimize
+					const FString tmp = FString::SanitizeFloat(*(const float*)Data.Data);
+					Ar.Serialize(&tmp, HandleIterator.CmdIndex);
+				}
+				else
+				{
+					UE_LOG(LogAussPlugins, Warning, TEXT("SendProperties with not supported property name: %s, type: %d"), *propertyName, Cmd.Type);
+				}
+			}
+		}
+	}
+}
+
+void FAussLayout::SendProperties(FAussSendingState* RESTRICT RepState, 
+	FAussChangelistState* RESTRICT RepChangelistState, 
+	FDataStoreWriter& Ar, 
+	const FConstAussObjectDataBuffer SourceData) const
+{
+	TArray<uint16> Changed;
+
+	// Gather all change lists that are new since we last looked, and merge them all together into a single CL
+	for (int32 i = 0; i < RepChangelistState->HistoryEnd; ++i)
+	{
+		const int32 HistoryIndex = i % FAussChangelistState::MAX_CHANGE_HISTORY;
+
+		FAussChangedHistory& HistoryItem = RepChangelistState->ChangeHistory[HistoryIndex];
+
+		TArray<uint16> Temp = MoveTemp(Changed);
+		MergeChangeList(SourceData, HistoryItem.Changed, Temp, Changed);
+	}
+
+	FAussChangelistIterator ChangelistIterator(Changed, 0);
+	FAussHandleIterator HandleIterator(Owner, ChangelistIterator, Cmds, BaseHandleToCmdIndex, 0, 1, 0, Cmds.Num() - 1);
+
+	SendProperties_r(RepState, Ar, HandleIterator, SourceData, 0, false);
 }
 
 void FAussLayout::ReceiveProperties(FDataStoreReader& Ar, const FConstAussObjectDataBuffer SourceData) const
@@ -986,7 +1505,7 @@ TUniquePtr<FAussState> FAussLayout::CreateRepState(const FConstAussObjectDataBuf
 	TUniquePtr<FAussState> RepState(new FAussState());
 	FAussStateStaticBuffer StaticBuffer(AsShared());
 
-	//InitRepStateStaticBuffer(StaticBuffer, Source);
+	InitRepStateStaticBuffer(StaticBuffer, Source);
 	RepState->ReceivingState.Reset(new FAussReceivingState(MoveTemp(StaticBuffer)));
 
 	return RepState;
@@ -1000,6 +1519,18 @@ void FAussLayout::UpdateChangelistMgr(FAussSendingState* RESTRICT RepState,
 	const bool bForceCompare) const
 {
 	CompareProperties(RepState, &InChangelistMgr.RepChangelistState, (const uint8*)InObject);
+}
+
+TSharedPtr<FAussChangelistMgr> FAussLayout::CreateReplicationChangelistMgr(const UObject* InObject) const
+{
+	const uint8* ShadowStateSource = (const uint8*)InObject->GetArchetype();
+	if (ShadowStateSource == nullptr)
+	{
+		UE_LOG(LogAussPlugins, Error, TEXT("FAussLayout::CreateReplicationChangelistMgr: Invalid object archetype, initializing shadow state to current object state: %s"), *GetFullNameSafe(InObject));
+		ShadowStateSource = (const uint8*)InObject;
+	}
+
+	return MakeShareable(new FAussChangelistMgr(AsShared(), ShadowStateSource, InObject));
 }
 
 void FAussLayout::CompareProperties(
@@ -1055,6 +1586,25 @@ void FAussLayout::CompareProperties(
 	return;
 }
 
+FAussStateStaticBuffer FAussLayout::CreateShadowBuffer(const FConstAussObjectDataBuffer Source) const
+{
+	FAussStateStaticBuffer ShadowData(AsShared());
+
+	if (!IsEmpty())
+	{
+		if (ShadowDataBufferSize == 0)
+		{
+			UE_LOG(LogAussPlugins, Error, TEXT("FAussLayout::InitShadowData: Invalid RepLayout: %s"), *GetPathNameSafe(Owner));
+		}
+		else
+		{
+			InitRepStateStaticBuffer(ShadowData, Source);
+		}
+	}
+
+	return ShadowData;
+}
+
 FAussStateStaticBuffer::~FAussStateStaticBuffer()
 {
 	//  TODO(nkpatx): release ptrs
@@ -1073,4 +1623,135 @@ TSharedPtr<FAussLayout>	FAussLayoutHelper::GetObjectClassRepLayout(UClass* Class
 	}
 
 	return *RepLayoutPtr;
+}
+
+TSharedPtr<FAussChangelistMgr> FAussLayoutHelper::GetReplicationChangeListMgr(UObject* Object)
+{
+	TSharedPtr<FAussChangelistMgr>* ReplicationChangeListMgrPtr = ReplicationChangeListMap.Find(Object);
+	if (!ReplicationChangeListMgrPtr)
+	{
+		const TSharedPtr<const FAussLayout> RepLayout = GetObjectClassRepLayout(Object->GetClass());
+		TSharedPtr<FAussChangelistMgr> ChangelistMgr = RepLayout->CreateReplicationChangelistMgr(Object);
+		ReplicationChangeListMgrPtr = &ReplicationChangeListMap.Add(Object, ChangelistMgr);
+	}
+
+	return *ReplicationChangeListMgrPtr;
+}
+
+FAussChangelistMgr::FAussChangelistMgr(
+	const TSharedRef<const FAussLayout>& InRepLayout,
+	const uint8* InSource,
+	const UObject* InRepresenting)
+	: LastReplicationFrame(0)
+	, LastInitialReplicationFrame(0)
+	, RepChangelistState(InRepLayout, InSource, InRepresenting)
+{}
+
+FAussChangelistState::FAussChangelistState(
+	const TSharedRef<const FAussLayout>& InRepLayout,
+	const uint8* InSource,
+	const UObject* InRepresenting)
+	: HistoryStart(0)
+	, HistoryEnd(0)
+	, CompareIndex(0)
+	, StaticBuffer(InRepLayout->CreateShadowBuffer(InSource))
+{}
+
+bool FAussHandleIterator::NextHandle()
+{
+	CmdIndex = INDEX_NONE;
+	Handle = ChangelistIterator.Changed[ChangelistIterator.ChangedIndex];
+
+	if (Handle == 0)
+	{
+		return false;		// Done
+	}
+
+	ChangelistIterator.ChangedIndex++;
+
+	if (!ensureMsgf(ChangelistIterator.Changed.IsValidIndex(ChangelistIterator.ChangedIndex),
+		TEXT("Attempted to access invalid iterator index: Handle=%d, ChangedIndex=%d, ChangedNum=%d, Owner=%s, LastSuccessfulCmd=%s"),
+		Handle, ChangelistIterator.ChangedIndex, ChangelistIterator.Changed.Num(),
+		*GetPathNameSafe(Owner),
+		*((Cmds.IsValidIndex(LastSuccessfulCmdIndex) && Cmds[LastSuccessfulCmdIndex].Property) ? Cmds[LastSuccessfulCmdIndex].Property->GetPathName() : FString::FromInt(LastSuccessfulCmdIndex))))
+	{
+		return false;
+	}
+
+	const int32 HandleMinusOne = Handle - 1;
+
+	ArrayIndex = (ArrayElementSize > 0 && NumHandlesPerElement > 0) ? HandleMinusOne / NumHandlesPerElement : 0;
+
+	if (ArrayIndex >= MaxArrayIndex)
+	{
+		return false;
+	}
+
+	ArrayOffset = ArrayIndex * ArrayElementSize;
+
+	const int32 RelativeHandle = HandleMinusOne - ArrayIndex * NumHandlesPerElement;
+
+	if (!ensureMsgf(HandleToCmdIndex.IsValidIndex(RelativeHandle),
+		TEXT("Attempted to access invalid RelativeHandle Index: Handle=%d, RelativeHandle=%d, NumHandlesPerElement=%d, ArrayIndex=%d, ArrayElementSize=%d, Owner=%s, LastSuccessfulCmd=%s"),
+		Handle, RelativeHandle, NumHandlesPerElement, ArrayIndex, ArrayElementSize,
+		*GetPathNameSafe(Owner),
+		*((Cmds.IsValidIndex(LastSuccessfulCmdIndex) && Cmds[LastSuccessfulCmdIndex].Property) ? Cmds[LastSuccessfulCmdIndex].Property->GetPathName() : FString::FromInt(LastSuccessfulCmdIndex))))
+	{
+		return false;
+	}
+
+	CmdIndex = HandleToCmdIndex[RelativeHandle].CmdIndex;
+
+	if (!ensureMsgf(MinCmdIndex <= CmdIndex && CmdIndex < MaxCmdIndex,
+		TEXT("Attempted to access Command Index outside of iterator range: Handle=%d, RelativeHandle=%d, CmdIndex=%d, MinCmdIdx=%d, MaxCmdIdx=%d, ArrayIndex=%d, Owner=%s, LastSuccessfulCmd=%s"),
+		Handle, RelativeHandle, CmdIndex, MinCmdIndex, MaxCmdIndex, ArrayIndex,
+		*GetPathNameSafe(Owner),
+		*((Cmds.IsValidIndex(LastSuccessfulCmdIndex) && Cmds[LastSuccessfulCmdIndex].Property) ? Cmds[LastSuccessfulCmdIndex].Property->GetPathName() : FString::FromInt(LastSuccessfulCmdIndex))))
+	{
+		return false;
+	}
+
+	const FAussLayoutCmd& Cmd = Cmds[CmdIndex];
+
+	if (!ensureMsgf(Cmd.RelativeHandle - 1 == RelativeHandle,
+		TEXT("Command Relative Handle does not match found Relative Handle: Handle=%d, RelativeHandle=%d, CmdIdx=%d, CmdRelativeHandle=%d, ArrayIndex=%d, Owner=%s, LastSuccessfulCmd=%s"),
+		Handle, RelativeHandle, CmdIndex, Cmd.RelativeHandle, ArrayIndex,
+		*GetPathNameSafe(Owner),
+		*((Cmds.IsValidIndex(LastSuccessfulCmdIndex) && Cmds[LastSuccessfulCmdIndex].Property) ? Cmds[LastSuccessfulCmdIndex].Property->GetPathName() : FString::FromInt(LastSuccessfulCmdIndex))))
+	{
+		return false;
+	}
+
+	if (!ensureMsgf(Cmd.Type != EAussLayoutCmdType::Return,
+		TEXT("Hit unexpected return handle: Handle=%d, RelativeHandle=%d, CmdIdx=%d, ArrayIndex=%d, Owner=%s, LastSuccessfulCmd=%s"),
+		Handle, RelativeHandle, CmdIndex, ArrayIndex,
+		*GetPathNameSafe(Owner),
+		*((Cmds.IsValidIndex(LastSuccessfulCmdIndex) && Cmds[LastSuccessfulCmdIndex].Property) ? Cmds[LastSuccessfulCmdIndex].Property->GetPathName() : FString::FromInt(LastSuccessfulCmdIndex))))
+	{
+		return false;
+	}
+
+	LastSuccessfulCmdIndex = CmdIndex;
+
+	return true;
+}
+
+bool FAussHandleIterator::JumpOverArray()
+{
+	const int32 ArrayChangedCount = ChangelistIterator.Changed[ChangelistIterator.ChangedIndex++];
+	ChangelistIterator.ChangedIndex += ArrayChangedCount;
+
+	if (!ensure(ChangelistIterator.Changed[ChangelistIterator.ChangedIndex] == 0))
+	{
+		return false;
+	}
+
+	ChangelistIterator.ChangedIndex++;
+
+	return true;
+}
+
+int32 FAussHandleIterator::PeekNextHandle() const
+{
+	return ChangelistIterator.Changed[ChangelistIterator.ChangedIndex];
 }

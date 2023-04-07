@@ -1,6 +1,8 @@
 #include "AussChannel.h"
+#include "Log.h"
 
 UAussChannel::UAussChannel()
+	: Actor(nullptr)
 {}
 
 UAussChannel::~UAussChannel()
@@ -38,6 +40,7 @@ TSharedRef<FAussObjectReplicator>& UAussChannel::FindOrCreateReplicator(UObject*
 	{
 		TSharedPtr<FAussObjectReplicator> NewReplicator = CreateReplicatorForNewActorChannel(Obj, RepLayoutHelper);
 		TSharedRef<FAussObjectReplicator>& NewRef = ReplicationMap.Add(Obj, NewReplicator.ToSharedRef());
+		NewRef->StartReplicating();
 		return NewRef;
 	}
 
@@ -56,6 +59,8 @@ int64 UAussChannel::ReplicateActor(TMap<int32, FString>* properties)
 	check(Actor);
 	check(RepLayoutHelper);
 	check(ActorReplicator);
+
+	UE_LOG(LogAussPlugins, Log, TEXT("ReplicateActor Actor: %s"), Actor->StaticConfigName());
 
 	ActorReplicator->ReplicateProperties(properties);
 

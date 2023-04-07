@@ -13,6 +13,7 @@ public:
 	void InitWithObject(UObject* InObject, FAussLayoutHelper* LayoutHelper);
 	void InitRecentProperties(uint8* Source);
 	bool ReplicateProperties(TMap<int32, FString>* properties);
+	void StartReplicating();
 
 	FORCEINLINE TWeakObjectPtr<UObject>	GetWeakObjectPtr() const
 	{

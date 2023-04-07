@@ -12,12 +12,12 @@ public:
 };
 
 FAussObjectReplicator::FAussObjectReplicator()
-	: ObjectClass(nullptr)
+	: RepLayout(nullptr)
+	, RepState(nullptr)
+	, CheckpointRepState(nullptr)
+	, ObjectClass(nullptr)
 	, ObjectPtr(nullptr)
 	, RepLayoutHelper(nullptr)
-	, CheckpointRepState(nullptr)
-	, RepState(nullptr)
-	, RepLayout(nullptr)
 {
 }
 
@@ -86,14 +86,39 @@ bool FAussObjectReplicator::ReplicateProperties(TMap<int32, FString>* properties
 
 	check(RepLayout.IsValid());
 	check(RepState.IsValid());
-	check(RepState->GetSendingState());
+	//check(RepState->GetSendingState());
+	check(ChangelistMgr.IsValid());
+	check(ChangelistMgr->GetRepChangelistState() != nullptr);
+	check((ChangelistMgr->GetRepChangelistState()->StaticBuffer.Num() == 0) == RepLayout->IsEmpty());
 
 	FDataStoreWriter writer(properties);
 	const FConstAussObjectDataBuffer sourceData = Object;
 
 	FAussSendingState* SendingRepState = RepState->GetSendingState();
 	RepLayout->UpdateChangelistMgr(SendingRepState, *ChangelistMgr, Object, 0, false);
-	RepLayout->SendProperties(writer, sourceData);
+	RepLayout->SendProperties(SendingRepState, ChangelistMgr->GetRepChangelistState(), writer, sourceData);
 
 	return true;
+}
+
+void FAussObjectReplicator::StartReplicating()
+{
+	UObject* Object = GetObject();
+	if (Object == nullptr)
+	{
+		UE_LOG(LogAussPlugins, Verbose, TEXT("StartReplicating: Object == nullptr"));
+		return;
+	}
+
+	if (UClass* const ObjectPtrClass = Object->GetClass())
+	{
+		ObjectClass = ObjectPtrClass;
+	}
+
+	if (FAussSendingState* SendingRepState = RepState.IsValid() ? RepState->GetSendingState() : nullptr)
+	{
+		SendingRepState->Retirement.SetNum(ObjectClass->ClassReps.Num());
+	}
+
+	ChangelistMgr = RepLayoutHelper->GetReplicationChangeListMgr(Object);
 }

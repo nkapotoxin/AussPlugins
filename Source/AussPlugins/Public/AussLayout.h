@@ -191,6 +191,102 @@ enum class EAussCreateRepStateFlags : uint32
 };
 ENUM_CLASS_FLAGS(EAussCreateRepStateFlags);
 
+class FAussHandleToCmdIndex
+{
+public:
+	FAussHandleToCmdIndex() :
+		CmdIndex(INDEX_NONE)
+	{
+	}
+
+	FAussHandleToCmdIndex(const int32 InHandleToCmdIndex) :
+		CmdIndex(InHandleToCmdIndex)
+	{
+	}
+
+	FAussHandleToCmdIndex(FAussHandleToCmdIndex&& Other) :
+		CmdIndex(Other.CmdIndex),
+		HandleToCmdIndex(MoveTemp(Other.HandleToCmdIndex))
+	{
+	}
+
+	FAussHandleToCmdIndex& operator=(FAussHandleToCmdIndex&& Other)
+	{
+		if (this != &Other)
+		{
+			CmdIndex = Other.CmdIndex;
+			HandleToCmdIndex = MoveTemp(Other.HandleToCmdIndex);
+		}
+
+		return *this;
+	}
+
+	int32 CmdIndex;
+	TUniquePtr<TArray<FAussHandleToCmdIndex>> HandleToCmdIndex;
+};
+
+class FAussChangelistIterator
+{
+public:
+
+	FAussChangelistIterator(const TArray<uint16>& InChanged, const int32 InChangedIndex) :
+		Changed(InChanged),
+		ChangedIndex(InChangedIndex)
+	{}
+
+	const TArray<uint16>& Changed;
+	int32 ChangedIndex;
+};
+
+class FAussHandleIterator
+{
+public:
+
+	FAussHandleIterator(
+		UStruct const* const InOwner,
+		FAussChangelistIterator& InChangelistIterator,
+		const TArray<FAussLayoutCmd>& InCmds,
+		const TArray<FAussHandleToCmdIndex>& InHandleToCmdIndex,
+		const int32 InElementSize,
+		const int32 InMaxArrayIndex,
+		const int32 InMinCmdIndex,
+		const int32 InMaxCmdIndex
+	) :
+		ChangelistIterator(InChangelistIterator),
+		Cmds(InCmds),
+		HandleToCmdIndex(InHandleToCmdIndex),
+		NumHandlesPerElement(HandleToCmdIndex.Num()),
+		ArrayElementSize(InElementSize),
+		MaxArrayIndex(InMaxArrayIndex),
+		MinCmdIndex(InMinCmdIndex),
+		MaxCmdIndex(InMaxCmdIndex),
+		Owner(InOwner),
+		LastSuccessfulCmdIndex(INDEX_NONE)
+	{
+		ensureMsgf(MaxCmdIndex >= MinCmdIndex, TEXT("Invalid Min / Max Command Indices. Owner=%s, MinCmdIndex=%d, MaxCmdIndex=%d"), *GetPathNameSafe(Owner), MinCmdIndex, MaxCmdIndex);
+	}
+
+	bool NextHandle();
+	bool JumpOverArray();
+	int32 PeekNextHandle() const;
+	FAussChangelistIterator& ChangelistIterator;
+	const TArray<FAussLayoutCmd>& Cmds;
+	const TArray<FAussHandleToCmdIndex>& HandleToCmdIndex;
+	const int32 NumHandlesPerElement;
+	const int32	ArrayElementSize;
+	const int32	MaxArrayIndex;
+	const int32	MinCmdIndex;
+	const int32	MaxCmdIndex;
+	int32 Handle;
+	int32 CmdIndex;
+	int32 ArrayIndex;
+	int32 ArrayOffset;
+	UStruct const* const Owner;
+
+private:
+
+	int32 LastSuccessfulCmdIndex;
+};
 
 class FAussChangedHistory
 {
@@ -344,6 +440,7 @@ public:
 	FAussChangedHistory ChangeHistory[MAX_CHANGE_HISTORY];
 	TArray<uint16> LifetimeChangelist;
 	TArray<uint16> InactiveChangelist;
+	TArray<FPropertyRetirement> Retirement;
 };
 
 struct FAussSerializationSharedInfo
@@ -471,6 +568,8 @@ class FAussLayoutHelper
 private:
 	friend class FAussLayout;
 
+	TMap<UObject*, TSharedPtr<FAussChangelistMgr>>	ReplicationChangeListMap;
+
 public:
 	FAussLayoutHelper() {}
 	~FAussLayoutHelper() {}
@@ -478,6 +577,7 @@ public:
 	TMap<TWeakObjectPtr<UObject>, TSharedPtr<FAussLayout>, FDefaultSetAllocator, TWeakObjectPtrMapKeyFuncs<TWeakObjectPtr<UObject>, TSharedPtr<FAussLayout> > >	RepLayoutMap;
 public:
 	TSharedPtr<FAussLayout>	GetObjectClassRepLayout(UClass* InClass);
+	TSharedPtr<FAussChangelistMgr> GetReplicationChangeListMgr(UObject* Object);
 };
 
 
@@ -499,6 +599,8 @@ public:
 	/** Top level Layout Commands. */
 	TArray<FAussParentCmd> Parents;
 
+	TArray<FAussHandleToCmdIndex> BaseHandleToCmdIndex;
+
 	UStruct* Owner;
 
 	TMap<FAussLayoutCmd*, TArray<FAussLayoutCmd>> NetSerializeLayouts;
@@ -507,8 +609,38 @@ public:
 
 	void InitFromClass(UClass* InObjectClass);
 
-	void SendProperties(FDataStoreWriter& Ar, 
-		const FConstAussObjectDataBuffer SourceData) const;
+	void BuildHandleToCmdIndexTable_r(
+		const int32 CmdStart,
+		const int32 CmdEnd,
+		TArray<FAussHandleToCmdIndex>& HandleToCmdIndex);
+
+	void MergeChangeList(
+		const FConstAussObjectDataBuffer Data,
+		const TArray<uint16>& Dirty1,
+		const TArray<uint16>& Dirty2,
+		TArray<uint16>& MergedDirty) const;
+
+	void MergeChangeList_r(
+		FAussHandleIterator& RepHandleIterator1,
+		FAussHandleIterator& RepHandleIterator2,
+		const FConstAussObjectDataBuffer SourceData,
+		TArray<uint16>& OutChanged) const;
+
+	void PruneChangeList_r(
+		FAussHandleIterator& RepHandleIterator,
+		const FConstAussObjectDataBuffer SourceData,
+		TArray<uint16>& OutChanged) const;
+
+	void SendProperties(FAussSendingState* RESTRICT RepState, FAussChangelistState* RESTRICT RepChangelistState, 
+		FDataStoreWriter& Ar, const FConstAussObjectDataBuffer SourceData) const;
+
+	void SendProperties_r(
+		FAussSendingState* RESTRICT RepState,
+		FDataStoreWriter& Ar,
+		FAussHandleIterator& HandleIterator,
+		const FConstAussObjectDataBuffer SourceData,
+		const int32	 ArrayDepth,
+		const bool forceSend) const;
 
 	void ReceiveProperties(FDataStoreReader& Ar, 
 		const FConstAussObjectDataBuffer SourceData) const;
@@ -537,6 +669,10 @@ public:
 		const bool bForceCompare) const;
 
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
+
+	TSharedPtr<FAussChangelistMgr> CreateReplicationChangelistMgr(const UObject* InObject) const;
+
+	FAussStateStaticBuffer CreateShadowBuffer(const FConstAussObjectDataBuffer Source) const;
 
 public:
 

@@ -2,13 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "AussObjectReplicator.h"
-#include "AussChannel.generated.h"
 
-UCLASS()
-class AUSSPLUGINS_API UAussChannel : public UObject
+
+class AUSSPLUGINS_API UAussChannel
 {
-	GENERATED_BODY()
-
 public:
 	UPROPERTY()
 	AActor* Actor;
@@ -34,6 +31,6 @@ public:
 	TMap< UObject*, TSharedRef< FAussObjectReplicator > > ReplicationMap;
 
 protected:
-	TSharedRef< FAussObjectReplicator >& FindOrCreateReplicator(UObject* Obj, bool* bOutCreated = nullptr);
+	TSharedRef<FAussObjectReplicator>& FindOrCreateReplicator(UObject* Obj, bool* bOutCreated = nullptr);
 };
 

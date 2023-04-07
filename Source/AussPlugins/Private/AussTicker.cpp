@@ -83,7 +83,7 @@ void AAussTicker::Tick(float deltaTime)
 
 		UE_LOG(LogAussPlugins, Log, TEXT("Auss tick: %f ms, update remote pawn: %d ms, update local pawn: %d ms, tick total: %d ms"),
 			deltaTime, cost1, cost2, cost3);
-		if (cost3 > 33)
+		if (cost3 > 1)
 		{
 			UE_LOG(LogAussPlugins, Warning, TEXT("Auss tick cost too long, deltaTime: %f ms, update remote pawn: %d ms, update local pawn: %d ms, tick total: %d ms"),
 				deltaTime, cost1, cost2, cost3);
@@ -414,7 +414,7 @@ void AAussTicker::GetPawnRepData(FString entityId, APawn* pawn, FRepCharacterDat
 	if (channelPtr == nullptr || *channelPtr == nullptr)
 	{
 		// create channel
-		UAussChannel* tmp = NewObject<UAussChannel>();
+		UAussChannel* tmp = new UAussChannel();
 		FAussLayoutHelper* InRepLayoutHelper = new FAussLayoutHelper();
 
 		// setup
