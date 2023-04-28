@@ -1,56 +1,8 @@
 #pragma once
 
+#include "UObject/UnrealType.h"
 #include "AussReplication.generated.h"
 
-USTRUCT()
-struct AUSSPLUGINS_API FRepUserPlayerInfo
-{
-	GENERATED_USTRUCT_BODY()
-	UPROPERTY()
-		FString userId;
-	UPROPERTY()
-		FString userName;
-	UPROPERTY()
-		FString realName;
-	UPROPERTY()
-		FString nickName;
-	UPROPERTY()
-		FString title;
-	UPROPERTY()
-		FString company;
-	UPROPERTY()
-		FString email;
-	UPROPERTY()
-		FString phone;
-	UPROPERTY()
-		FString loginDate;
-	UPROPERTY()
-		FString playerPhone;
-	UPROPERTY()
-		int32 gender;
-};
-
-USTRUCT()
-struct AUSSPLUGINS_API FRepUserHumanStyleInfo
-{
-	GENERATED_USTRUCT_BODY()
-	UPROPERTY()
-		int32 face;
-	UPROPERTY()
-		int32 hair;
-	UPROPERTY()
-		int32 cloth;
-};
-
-USTRUCT()
-struct AUSSPLUGINS_API FRepUserPlayerState
-{
-	GENERATED_USTRUCT_BODY()
-	UPROPERTY()
-	FRepUserPlayerInfo userPlayerInfo;
-	UPROPERTY()
-	FRepUserHumanStyleInfo userHumanStyleInfo;
-};
 
 USTRUCT()
 struct AUSSPLUGINS_API FRepCharacterData
@@ -63,7 +15,7 @@ struct AUSSPLUGINS_API FRepCharacterData
 	UPROPERTY()
 	FRotator rotation;
 	UPROPERTY()
-	FRepUserPlayerState playerState;
+	TMap<int32, FString> dynamicProperties;
 	UPROPERTY()
 	float walkSpeed;
 };

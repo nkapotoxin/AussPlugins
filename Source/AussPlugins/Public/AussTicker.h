@@ -1,9 +1,12 @@
 #pragma once
 
-#include "CoreMinimal.h"
-#include "Tickable.h"
 #include "AussEvent.h"
 #include "AussReplication.h"
+#include "AussLayout.h"
+#include "AussChannel.h"
+#include "CoreMinimal.h"
+#include "Tickable.h"
+#include "UObject/UnrealType.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/GameState.h"
 #include "GameFramework/GameMode.h"
@@ -36,6 +39,8 @@ public:
 	AActor* SpawnActor(FRepCharacterData* pawnData);
 	TMap<FString, APawn*> GetPawns();
 	TMap<FString, APawn*> GetPawnsByClassName(const FString& pawnClassName);
+	void GetPawnRepData(FString entityId, APawn* pawn, FRepCharacterData* rcd);
+	void UpdatePawnRepData(APawn* pawn, FRepCharacterData* rcd);
 
 	void InitLocalPawn();
 	void UpdateRemotePawnCache();
@@ -56,7 +61,9 @@ private:
 	TMap<FString, FString> remotePawnIdMap;
 	TMap<FString, APawn*> allLocalPawns;
 	TMap<FString, FRepCharacterData> remotePawns;
+	TMap<FString, UAussChannel*> allChannels;
 	TArray<FString> needToCreateRemotePawns;
 	TArray<FString> needToDestroyRemotePawns;
 	TArray<FString> needToUpdateRemotePawns;
+	TSharedPtr<FAussLayout> playerStateLayout;
 };
